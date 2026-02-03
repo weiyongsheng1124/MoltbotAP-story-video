@@ -1,14 +1,15 @@
 # Story Video Generator - Dockerfile
-# Installs FFmpeg, Python with PIL for video generation
+# Installs FFmpeg, Python with PIL, espeak-ng for TTS
 
 FROM node:18-alpine
 
-# Install FFmpeg, Python, and other tools
+# Install all required tools
 RUN apk add --no-cache \
     ffmpeg \
     python3 \
     py3-pip \
     py3-pillow \
+    espeak-ng \
     git \
     bash
 
