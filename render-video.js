@@ -1,5 +1,5 @@
 /**
- * Story Video Renderer - Simple PNG + FFmpeg concat
+ * Story Video Renderer - Debug version
  */
 
 const fs = require('fs');
@@ -8,7 +8,7 @@ const { spawn, execSync } = require('child_process');
 require('dotenv').config();
 
 const CONFIG = {
-    VIDEO: { width: 1080, height: 1920, fps: 30 },
+    VIDEO: { width: 1080, height: 1920 },
     OUTPUT_DIR: path.join(__dirname, 'output'),
     GITHUB_REPO: 'weiyongsheng1124/MoltbotAP-story-video',
     VIDEO_DIR: 'video'
@@ -19,10 +19,16 @@ async function uploadToGitHub(filepath, commitMessage) {
     const axios = require('axios');
     const filename = path.basename(filepath);
     const destPath = path.join(CONFIG.VIDEO_DIR, filename);
-    const fileContent = fs.readFileSync(filepath, 'base64');
+    const fileContent = fs.readFileSync(filepath).toString('base64');
     const githubToken = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT;
 
-    if (!githubToken) return null;
+    console.log(`\n📤 Uploading ${filename} to GitHub...`);
+
+    if (!githubToken) {
+        console.log('❌ No GITHUB_TOKEN');
+        return null;
+    }
+
     const [owner, repoName] = CONFIG.GITHUB_REPO.split('/');
 
     try {
@@ -33,15 +39,21 @@ async function uploadToGitHub(filepath, commitMessage) {
                 { headers: { Authorization: `token ${githubToken}` } }
             );
             sha = existing.data.sha;
-        } catch {}
+            console.log('  Existing file SHA:', sha);
+        } catch (e) {
+            console.log('  New file');
+        }
 
         const response = await axios.put(
             `https://api.github.com/repos/${owner}/${repoName}/contents/${destPath}`,
             { message: commitMessage, content: fileContent, sha },
             { headers: { Authorization: `token ${githubToken}` } }
         );
+
+        console.log('✅ Uploaded:', response.data.content.download_url);
         return response.data.content.download_url;
     } catch (err) {
+        console.log('❌ Upload failed:', err.response?.data?.message || err.message);
         return null;
     }
 }
@@ -49,14 +61,14 @@ async function uploadToGitHub(filepath, commitMessage) {
 // Check tools
 function checkTools() {
     const tools = { ffmpeg: false, espeak: false };
-    try { execSync('ffmpeg -version', { stdio: 'ignore' }); tools.ffmpeg = true; } catch {}
-    try { execSync('espeak-ng --version', { stdio: 'ignore' }); tools.espeak = true; } catch {}
+    try { execSync('ffmpeg -version 2>&1 | head -1', { stdio: 'pipe' }); tools.ffmpeg = true; } catch (e) { console.log('FFmpeg not found'); }
+    try { execSync('espeak-ng --version 2>&1 | head -1', { stdio: 'pipe' }); tools.espeak = true; } catch (e) { console.log('espeak-ng not found'); }
     return tools;
 }
 
 const TOOLS = checkTools();
 
-// Create colored PNG using FFmpeg
+// Simple slide creation
 function createSlide(filepath, text, category, index) {
     const colors = {
         person: '#2C3E50', history: '#3D2817', money: '#0D3D0D', food: '#4A1C1C',
@@ -64,28 +76,37 @@ function createSlide(filepath, text, category, index) {
         love: '#3D1C2C', death: '#1a1a1a', lego: '#FFE66D', default: '#1a1a2e'
     };
     const icons = {
-        person: '👤 PERSON', history: '📜 HISTORY', money: '💰 MONEY', food: '🍽️ FOOD',
-        animal: '🐾 ANIMAL', war: '⚔️ WAR', crime: '🔍 CRIME', science: '🔬 SCIENCE',
-        love: '❤️ LOVE', death: '💀 DEATH', lego: '🧱 LEGO', default: '⭐ STORY'
+        person: '👤', history: '📜', money: '💰', food: '🍽️',
+        animal: '🐾', war: '⚔️', crime: '🔍', science: '🔬',
+        love: '❤️', death: '💀', lego: '🧱', default: '⭐'
     };
 
     const bg = colors[category] || colors.default;
     const icon = icons[category] || icons.default;
 
-    // Simple solid color + text overlay
-    const filter = `color=s=1080x1920:c=${bg}[bg];[bg]drawbox=x=0:y=0:w=1080:h=130:color=black@0.8:t=fill[header];[header]drawtext=text='${icon} TIME':fontcolor=white:fontsize=36:x=40:y=45[bg2];[bg2]drawtext=text='Part ${index + 1}':fontcolor=white:fontsize=28:x=40:y=90[bg3];[bg3]drawtext=text='${text.substring(0, 80)}':fontcolor=white:fontsize=32:x=60:y=250:max_lines=8[out]`;
+    console.log(`\n🎨 Creating slide ${index + 1}: ${icon} ${category || 'default'}`);
 
+    // First create simple colored PNG using FFmpeg
     try {
-        execSync(`ffmpeg -y -lavfi "${filter}" -frames:v 1 -q:v 2 "${filepath}"`, { stdio: 'pipe', timeout: 30 });
-        console.log(`✓ Slide ${index + 1}: ${icon}`);
-        return filepath;
+        // Create colored background
+        const cmd1 = `ffmpeg -y -f lavfi -i "color=c=${bg}:s=1080x1920" -frames:v 1 "${filepath}" 2>&1`;
+        console.log('  Running:', cmd1.substring(0, 80));
+        execSync(cmd1, { stdio: 'pipe', timeout: 30 });
+
+        if (fs.existsSync(filepath)) {
+            const size = fs.statSync(filepath).size;
+            console.log(`  ✅ Created: ${size} bytes`);
+            return filepath;
+        }
     } catch (err) {
-        // Fallback: just create a tiny PNG
-        const minimal = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
-        fs.writeFileSync(filepath, minimal);
-        console.log(`✓ Minimal slide ${index + 1}`);
-        return filepath;
+        console.log('  ❌ FFmpeg error:', err.message.substring(0, 100));
     }
+
+    // Fallback: minimal PNG
+    const minimal = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+    fs.writeFileSync(filepath, minimal);
+    console.log('  ⚠️ Minimal fallback');
+    return filepath;
 }
 
 // Generate TTS
@@ -94,17 +115,23 @@ function generateTTS(text, filename) {
     const filepath = path.join(outputDir, filename);
     const wavPath = filepath.replace('.mp3', '.wav');
 
+    console.log(`\n🔊 TTS: ${text.substring(0, 50)}...`);
+
     if (TOOLS.espeak) {
         try {
-            execSync(`espeak-ng -p 60 -s 150 -w "${wavPath}" "${text.substring(0, 300)}"`, { stdio: 'pipe', timeout: 30 });
+            execSync(`espeak-ng -p 60 -s 150 -w "${wavPath}" "${text.substring(0, 300)}" 2>&1`, { stdio: 'pipe', timeout: 30 });
+
             if (fs.existsSync(wavPath)) {
                 if (TOOLS.ffmpeg) {
-                    execSync(`ffmpeg -y -i "${wavPath}" -b:a 128k "${filepath}"`, { stdio: 'pipe' });
+                    execSync(`ffmpeg -y -i "${wavPath}" -b:a 128k "${filepath}" 2>&1`, { stdio: 'pipe' });
                     try { fs.unlinkSync(wavPath); } catch {}
                 }
+                console.log(`  ✅ Audio: ${fs.statSync(filepath).size} bytes`);
                 return filepath;
             }
-        } catch (err) {}
+        } catch (err) {
+            console.log('  ❌ TTS error:', err.message.substring(0, 100));
+        }
     }
     return null;
 }
@@ -112,10 +139,17 @@ function generateTTS(text, filename) {
 // Run FFmpeg
 function runFFmpeg(args) {
     return new Promise((resolve, reject) => {
+        console.log('\n🎥 Running FFmpeg...');
         const child = spawn('ffmpeg', args);
         let stderr = '';
         child.stderr.on('data', d => stderr += d.toString());
-        child.on('close', code => code === 0 ? resolve() : reject(new Error(stderr)));
+        child.on('close', code => {
+            if (code === 0) resolve();
+            else {
+                console.log('❌ FFmpeg failed:', stderr.substring(0, 300));
+                reject(new Error(stderr));
+            }
+        });
     });
 }
 
@@ -123,16 +157,11 @@ function runFFmpeg(args) {
 function detectCategory(text) {
     const lower = text.toLowerCase();
     const map = {
-        person: ['man', 'woman', 'people', 'king', 'person'],
-        history: ['year', 'century', 'war', 'ancient', 'history'],
-        money: ['money', 'gold', 'rich', 'dollar'],
-        food: ['food', 'eat', 'cook', 'recipe'],
-        animal: ['animal', 'dog', 'cat', 'bird'],
-        war: ['war', 'soldier', 'army', 'battle'],
-        crime: ['crime', 'police', 'prison', 'murder'],
-        science: ['science', 'invent', 'discovery'],
-        love: ['love', 'marriage', 'romance'],
-        death: ['death', 'die', 'kill', 'dead'],
+        person: ['man', 'woman', 'people', 'king'], history: ['year', 'century', 'war', 'ancient'],
+        money: ['money', 'gold', 'rich', 'dollar'], food: ['food', 'eat', 'cook'],
+        animal: ['animal', 'dog', 'cat', 'bird'], war: ['war', 'soldier', 'army', 'battle'],
+        crime: ['crime', 'police', 'prison'], science: ['science', 'invent', 'discovery'],
+        love: ['love', 'marriage', 'romance'], death: ['death', 'die', 'kill'],
         lego: ['lego', 'toy', 'brick']
     };
     for (const [cat, words] of Object.entries(map)) {
@@ -141,9 +170,11 @@ function detectCategory(text) {
     return 'default';
 }
 
-// Render video
+// Render
 async function renderVideo(projectPath, uploadToGithub = true) {
-    console.log(`\n🎬 Rendering: ${projectPath}`);
+    console.log(`\n${'='.repeat(50)}`);
+    console.log(`🎬 RENDERING: ${projectPath}`);
+    console.log('='.repeat(50));
 
     const project = JSON.parse(fs.readFileSync(projectPath, 'utf8'));
     const outputDir = CONFIG.OUTPUT_DIR;
@@ -151,15 +182,13 @@ async function renderVideo(projectPath, uploadToGithub = true) {
     const outputPath = path.join(outputDir, outputFile);
     const { width, height, duration } = project.settings;
 
+    // Slides
     const slides = [];
-
-    // Generate intro
     const introCat = detectCategory(project.title);
     const introSlide = path.join(outputDir, `slide_${Date.now()}_0.png`);
     createSlide(introSlide, project.title, introCat, 0);
     if (fs.existsSync(introSlide)) slides.push(introSlide);
 
-    // Generate segment slides
     for (let i = 0; i < project.timeline.segments.length; i++) {
         const seg = project.timeline.segments[i];
         const cat = detectCategory(seg.narration);
@@ -168,23 +197,24 @@ async function renderVideo(projectPath, uploadToGithub = true) {
         if (fs.existsSync(slidePath)) slides.push(slidePath);
     }
 
-    console.log(`\n📊 ${slides.length} slides created`);
+    console.log(`\n📊 Slides: ${slides.length}/${1 + project.timeline.segments.length}`);
 
     if (slides.length === 0) {
         throw new Error('No slides generated');
     }
 
-    // Generate TTS
+    // Audio
     const audioFiles = [];
     for (let i = 0; i < project.timeline.segments.length; i++) {
         const seg = project.timeline.segments[i];
         const audio = generateTTS(seg.narration, `audio_${Date.now()}_${i}.mp3`);
         if (audio && fs.existsSync(audio)) audioFiles.push(audio);
     }
-    console.log(`🎵 ${audioFiles.length} audio files`);
+
+    console.log(`\n🎵 Audio files: ${audioFiles.length}`);
 
     // Create video
-    if (TOOLS.ffmpeg) {
+    if (TOOLS.ffmpeg && slides.length > 0) {
         try {
             const concatFile = path.join(outputDir, 'concat.txt');
             const slideDur = Math.ceil(duration / slides.length);
@@ -194,6 +224,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
                 concatContent += `file '${slide}'\nduration ${slideDur}\n`;
             }
             fs.writeFileSync(concatFile, concatContent);
+            console.log(`\n📝 Concat file: ${concatContent.length} bytes`);
 
             const args = ['-y', '-f', 'concat', '-safe', '0', '-i', concatFile];
 
@@ -217,9 +248,8 @@ async function renderVideo(projectPath, uploadToGithub = true) {
             args.push('-t', String(duration));
             args.push(outputPath);
 
-            console.log('\n🎥 Running FFmpeg...');
             await runFFmpeg(args);
-            console.log(`✅ Video created: ${outputPath}`);
+            console.log(`\n✅ Video created: ${outputPath}`);
 
             // Cleanup
             try { fs.unlinkSync(concatFile); } catch {}
@@ -227,15 +257,17 @@ async function renderVideo(projectPath, uploadToGithub = true) {
 
             if (fs.existsSync(outputPath)) {
                 const size = fs.statSync(outputPath).size;
-                console.log(`📦 Size: ${(size / 1024 / 1024).toFixed(2)} MB`);
+                console.log(`\n📦 Size: ${size} bytes (${(size/1024/1024).toFixed(2)} MB)`);
 
-                if (uploadToGithub && size > 5000) {
+                if (size > 1000) {
                     const githubUrl = await uploadToGitHub(outputPath, `Add video: ${project.title}`);
                     return { outputPath, githubUrl };
+                } else {
+                    console.log('⚠️ Video too small, skipping upload');
                 }
             }
         } catch (err) {
-            console.log(`Error: ${err.message.substring(0, 200)}`);
+            console.log(`\n❌ Render error: ${err.message.substring(0, 200)}`);
         }
     }
 
