@@ -130,6 +130,9 @@ function checkAvailableTools() {
     return tools;
 }
 
+// Check what tools are available (run once at module load)
+const AVAILABLE_TOOLS = checkAvailableTools();
+
 // Generate gradient background image (FREE - no API needed)
 function generateGradientImage(text, bgColor, duration, index) {
     const outputDir = CONFIG.OUTPUT_DIR;
@@ -137,18 +140,35 @@ function generateGradientImage(text, bgColor, duration, index) {
     const filepath = path.join(outputDir, filename);
 
     // Create gradient background using ImageMagick if available
-    try {
-        const colors = [
-            '#1a1a2e', '#16213e', '#0f3460', '#533483',
-            '#e94560', '#ff6b6b', '#4ecdc4', '#45b7d1'
-        ];
-        const color1 = colors[index % colors.length];
-        const color2 = colors[(index + 1) % colors.length];
+    if (AVAILABLE_TOOLS.imagemagick) {
+        try {
+            const colors = [
+                '#1a1a2e', '#16213e', '#0f3460', '#533483',
+                '#e94560', '#ff6b6b', '#4ecdc4', '#45b7d1'
+            ];
+            const color1 = colors[index % colors.length];
+            const color2 = colors[(index + 1) % colors.length];
 
-        execSync(`convert -size 1080x1920 gradient:${color1}-${color2} -gravity center -pointsize 48 -fill white -annotate 0 "${text.substring(0, 100)}" ${filepath}`);
-        console.log(`Generated image: ${filename}`);
-    } catch (err) {
-        // Fallback: create simple colored PNG with Python/PIL
+            // Escape text for ImageMagick
+            const safeText = text.substring(0, 80).replace(/"/g, '\\"').replace(/'/g, "\\'");
+
+            // Create gradient with text overlay
+            const cmd = `convert -size 1080x1920 gradient:${color1}-${color2} -gravity center -pointsize 42 -fill white -annotate 0 "${safeText}" ${filepath}`;
+
+            execSync(cmd, { stdio: 'pipe' });
+            console.log(`Generated image: ${filename}`);
+
+            // Create info file alongside
+            fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, color1, color2, duration, index }));
+
+            return { filepath, duration, text };
+        } catch (err) {
+            console.log(`ImageMagick error: ${err.message}`);
+        }
+    }
+
+    // Fallback: create simple colored PNG with Python/PIL
+    if (AVAILABLE_TOOLS.python3) {
         try {
             const pythonCode = `
 import PIL.Image
@@ -169,13 +189,19 @@ img.save('${filepath}')
 `;
             fs.writeFileSync('/tmp/gen_image.py', pythonCode);
             execSync('python3 /tmp/gen_image.py', { cwd: outputDir });
-            console.log(`Generated image: ${filename}`);
+            console.log(`Generated image (Python): ${filename}`);
+
+            fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, bgColor, duration, index, method: 'python' }));
+
+            return { filepath, duration, text };
         } catch (err2) {
-            // Final fallback: create placeholder info file
-            fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, bgColor, duration, index }));
-            console.log(`Created placeholder: ${filename}`);
+            console.log(`Python fallback error: ${err2.message}`);
         }
     }
+
+    // Final fallback: create placeholder info file
+    fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, bgColor, duration, index, method: 'none' }));
+    console.log(`Created placeholder: ${filename}`);
 
     return { filepath, duration, text };
 }
@@ -252,13 +278,11 @@ function runFFmpeg(args) {
 async function renderVideo(projectPath, uploadToGithub = true) {
     console.log(`\nRendering Video Project: ${projectPath}`);
 
-    // Check available tools
-    const tools = checkAvailableTools();
     console.log('\nAvailable tools:');
-    console.log(`  FFmpeg: ${tools.ffmpeg ? '✓' : '✗'}`);
-    console.log(`  ImageMagick: ${tools.imagemagick ? '✓' : '✗'}`);
-    console.log(`  Python3: ${tools.python3 ? '✓' : '✗'}`);
-    console.log(`  espeak-ng: ${tools.espeak ? '✓' : '✗'}`);
+    console.log(`  FFmpeg: ${AVAILABLE_TOOLS.ffmpeg ? '✓' : '✗'}`);
+    console.log(`  ImageMagick: ${AVAILABLE_TOOLS.imagemagick ? '✓' : '✗'}`);
+    console.log(`  Python3: ${AVAILABLE_TOOLS.python3 ? '✓' : '✗'}`);
+    console.log(`  espeak: ${AVAILABLE_TOOLS.espeak ? '✓' : '✗'}`);
 
     // Load project
     const projectData = fs.readFileSync(projectPath, 'utf8');
@@ -304,23 +328,42 @@ async function renderVideo(projectPath, uploadToGithub = true) {
 
     let githubUrl = null;
 
-    if (tools.ffmpeg) {
+    if (AVAILABLE_TOOLS.ffmpeg && AVAILABLE_TOOLS.imagemagick) {
         try {
-            // Simple concat using FFmpeg
+            // Create concat file for multiple slides
+            const concatFile = path.join(outputDir, 'concat.txt');
+            const concatContent = slides.map(slide => {
+                const duration = slide.duration || 10;
+                return `file '${slide.filepath}'
+duration ${duration}`;
+            }).join('\n') + '\n';
+
+            fs.writeFileSync(concatFile, concatContent);
+            console.log(`Created concat file: ${concatFile}`);
+
+            // Use FFmpeg concat demuxer
             const args = [
                 '-y',
-                '-loop', '1',
-                '-i', slides[0].filepath,
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', concatFile,
                 '-c:v', 'libx264',
-                '-t', String(project.settings.duration),
+                '-preset', 'ultrafast',
+                '-crf', '23',
                 '-pix_fmt', 'yuv420p',
-                '-vf', `scale=${width}:${height}`,
+                '-vf', `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
+                '-movflags', '+faststart',
                 outputPath
             ];
 
             console.log('\nRunning FFmpeg...');
+            console.log('Args:', args.join(' '));
+
             await runFFmpeg(args);
             console.log(`\nVideo created: ${outputPath}`);
+
+            // Clean up concat file
+            try { fs.unlinkSync(concatFile); } catch {}
 
             // Upload to GitHub via API
             if (uploadToGithub && fs.existsSync(outputPath)) {
@@ -334,16 +377,17 @@ async function renderVideo(projectPath, uploadToGithub = true) {
                     );
                 } else {
                     console.log('\n⚠️ Video file too small, skipping upload');
+                    createPlaceholder(outputPath, project, slides, subscribeAnim, tools);
                 }
             }
 
         } catch (err) {
             console.log(`FFmpeg error: ${err.message}`);
-            createPlaceholder(outputPath, project, slides, subscribeAnim, tools);
+            createPlaceholder(outputPath, project, slides, subscribeAnim, AVAILABLE_TOOLS);
         }
     } else {
-        console.log('\nFFmpeg not available - creating placeholder...');
-        createPlaceholder(outputPath, project, slides, subscribeAnim, tools);
+        console.log('\nFFmpeg or ImageMagick not available - creating placeholder...');
+        createPlaceholder(outputPath, project, slides, subscribeAnim, AVAILABLE_TOOLS);
     }
 
     return { outputPath, githubUrl };
