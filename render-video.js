@@ -549,6 +549,13 @@ duration ${slideDuration}
             args.push(outputPath);
 
             console.log('\nRunning FFmpeg...');
+            console.log('FFmpeg args:', args.join(' '));
+            console.log('Input file:', concatFile);
+
+            // Read concat file for debug
+            console.log('Concat file content:');
+            console.log(fs.readFileSync(concatFile, 'utf8').substring(0, 500));
+
             await runFFmpeg(args);
             console.log(`\nVideo created: ${outputPath}`);
 
