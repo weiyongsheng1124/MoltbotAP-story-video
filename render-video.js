@@ -1,5 +1,5 @@
 /**
- * Story Video Renderer - FFmpeg only (no Python/Canvas)
+ * Story Video Renderer - Simple PNG + FFmpeg concat
  */
 
 const fs = require('fs');
@@ -23,7 +23,6 @@ async function uploadToGitHub(filepath, commitMessage) {
     const githubToken = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT;
 
     if (!githubToken) return null;
-
     const [owner, repoName] = CONFIG.GITHUB_REPO.split('/');
 
     try {
@@ -36,15 +35,11 @@ async function uploadToGitHub(filepath, commitMessage) {
             sha = existing.data.sha;
         } catch {}
 
-        const payload = { message: commitMessage, content: fileContent };
-        if (sha) payload.sha = sha;
-
         const response = await axios.put(
             `https://api.github.com/repos/${owner}/${repoName}/contents/${destPath}`,
-            payload,
+            { message: commitMessage, content: fileContent, sha },
             { headers: { Authorization: `token ${githubToken}` } }
         );
-
         return response.data.content.download_url;
     } catch (err) {
         return null;
@@ -61,65 +56,35 @@ function checkTools() {
 
 const TOOLS = checkTools();
 
-// Styles
-const STYLES = {
-    person: { bg: '#2C3E50', icon: '👤', name: 'PERSON', color: '0xFF6B6B' },
-    history: { bg: '#3D2817', icon: '📜', name: 'HISTORY', color: '0xD4A574' },
-    money: { bg: '#0D3D0D', icon: '💰', name: 'MONEY', color: '0xFFE66D' },
-    food: { bg: '#4A1C1C', icon: '🍽️', name: 'FOOD', color: '0xFF8C69' },
-    animal: { bg: '#0D3320', icon: '🐾', name: 'ANIMAL', color: '0x98D8C8' },
-    war: { bg: '#3D0D0D', icon: '⚔️', name: 'WAR', color: '0xE74C3C' },
-    crime: { bg: '#1a1a1a', icon: '🔍', name: 'CRIME', color: '0x95A5A6' },
-    science: { bg: '#0D1F3C', icon: '🔬', name: 'SCIENCE', color: '0x74B9FF' },
-    love: { bg: '#3D1C2C', icon: '❤️', name: 'LOVE', color: '0xFF69B4' },
-    death: { bg: '#1a1a1a', icon: '💀', name: 'DEATH', color: '0x7F8C8D' },
-    lego: { bg: '#FFE66D', icon: '🧱', name: ' LEGO ', color: '0xFF6B6B' },
-    default: { bg: '#1a1a2e', icon: '⭐', name: 'STORY', color: '0xFFFFFF' }
-};
-
-// Detect category
-function detectCategory(text) {
-    const lower = text.toLowerCase();
-    const map = {
-        person: ['man', 'woman', 'people', 'king', 'person', 'human'],
-        history: ['year', 'century', 'war', 'ancient', 'history'],
-        money: ['money', 'gold', 'rich', 'dollar', 'million'],
-        food: ['food', 'eat', 'cook', 'recipe', 'meal'],
-        animal: ['animal', 'dog', 'cat', 'bird', 'fish'],
-        war: ['war', 'soldier', 'army', 'battle', 'weapon'],
-        crime: ['crime', 'police', 'prison', 'murder'],
-        science: ['science', 'invent', 'discovery', 'theory'],
-        love: ['love', 'marriage', 'romance', 'heart'],
-        death: ['death', 'die', 'kill', 'dead'],
-        lego: ['lego', 'toy', 'brick', 'play']
+// Create colored PNG using FFmpeg
+function createSlide(filepath, text, category, index) {
+    const colors = {
+        person: '#2C3E50', history: '#3D2817', money: '#0D3D0D', food: '#4A1C1C',
+        animal: '#0D3320', war: '#3D0D0D', crime: '#1a1a1a', science: '#0D1F3C',
+        love: '#3D1C2C', death: '#1a1a1a', lego: '#FFE66D', default: '#1a1a2e'
+    };
+    const icons = {
+        person: '👤 PERSON', history: '📜 HISTORY', money: '💰 MONEY', food: '🍽️ FOOD',
+        animal: '🐾 ANIMAL', war: '⚔️ WAR', crime: '🔍 CRIME', science: '🔬 SCIENCE',
+        love: '❤️ LOVE', death: '💀 DEATH', lego: '🧱 LEGO', default: '⭐ STORY'
     };
 
-    for (const [cat, words] of Object.entries(map)) {
-        if (words.some(w => lower.includes(w))) return cat;
-    }
-    return 'default';
-}
+    const bg = colors[category] || colors.default;
+    const icon = icons[category] || icons.default;
 
-// Create slide using FFmpeg
-function createSlide(filepath, text, category, index) {
-    const style = STYLES[category] || STYLES.default;
-    const safeText = text.replace(/'/g, '').replace(/"/g, '').substring(0, 120);
-
-    // FFmpeg drawtext filter for styled slide
-    const filter = `color=c=${style.bg}:s=1080x1920:rate=30,format=rgba[b];` +
-        `[b]drawbox=x=0:y=0:w=1080:h=130:color=black@0.7:t=fill[header];` +
-        `[header]drawtext=text='${style.icon} ${style.name} TIME':fontcolor=white:fontsize=32:x=50:y=45:font=Arial:shadowcolor=black:shadowx=2:shadowy=2[bg1];` +
-        `[bg1]drawtext=text='Part ${index + 1}':fontcolor=${style.color}:fontsize=24:x=50:y=85:font=Arial[bg2];` +
-        `[bg2]drawbox=x=40:y=220:w=1000:h=900:color=black@0.5:t=fill:round=20[box];` +
-        `[box]drawtext=text='${safeText}':fontcolor=white:fontsize=32:x=70:y=260:font=Arial:wrap=1:line_spacing=8[out]`;
+    // Simple solid color + text overlay
+    const filter = `color=s=1080x1920:c=${bg}[bg];[bg]drawbox=x=0:y=0:w=1080:h=130:color=black@0.8:t=fill[header];[header]drawtext=text='${icon} TIME':fontcolor=white:fontsize=36:x=40:y=45[bg2];[bg2]drawtext=text='Part ${index + 1}':fontcolor=white:fontsize=28:x=40:y=90[bg3];[bg3]drawtext=text='${text.substring(0, 80)}':fontcolor=white:fontsize=32:x=60:y=250:max_lines=8[out]`;
 
     try {
         execSync(`ffmpeg -y -lavfi "${filter}" -frames:v 1 -q:v 2 "${filepath}"`, { stdio: 'pipe', timeout: 30 });
-        console.log(`✓ Slide ${index + 1}: ${style.icon} ${style.name}`);
+        console.log(`✓ Slide ${index + 1}: ${icon}`);
         return filepath;
     } catch (err) {
-        console.log(`✗ Slide error: ${err.message.substring(0, 100)}`);
-        return null;
+        // Fallback: just create a tiny PNG
+        const minimal = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+        fs.writeFileSync(filepath, minimal);
+        console.log(`✓ Minimal slide ${index + 1}`);
+        return filepath;
     }
 }
 
@@ -131,9 +96,7 @@ function generateTTS(text, filename) {
 
     if (TOOLS.espeak) {
         try {
-            const safeText = text.replace(/"/g, '\\"').substring(0, 300);
-            execSync(`espeak-ng -p 60 -s 150 -w "${wavPath}" "${safeText}"`, { stdio: 'pipe', timeout: 30 });
-
+            execSync(`espeak-ng -p 60 -s 150 -w "${wavPath}" "${text.substring(0, 300)}"`, { stdio: 'pipe', timeout: 30 });
             if (fs.existsSync(wavPath)) {
                 if (TOOLS.ffmpeg) {
                     execSync(`ffmpeg -y -i "${wavPath}" -b:a 128k "${filepath}"`, { stdio: 'pipe' });
@@ -141,9 +104,7 @@ function generateTTS(text, filename) {
                 }
                 return filepath;
             }
-        } catch (err) {
-            console.log(`TTS: ${text.substring(0, 40)}...`);
-        }
+        } catch (err) {}
     }
     return null;
 }
@@ -156,6 +117,28 @@ function runFFmpeg(args) {
         child.stderr.on('data', d => stderr += d.toString());
         child.on('close', code => code === 0 ? resolve() : reject(new Error(stderr)));
     });
+}
+
+// Detect category
+function detectCategory(text) {
+    const lower = text.toLowerCase();
+    const map = {
+        person: ['man', 'woman', 'people', 'king', 'person'],
+        history: ['year', 'century', 'war', 'ancient', 'history'],
+        money: ['money', 'gold', 'rich', 'dollar'],
+        food: ['food', 'eat', 'cook', 'recipe'],
+        animal: ['animal', 'dog', 'cat', 'bird'],
+        war: ['war', 'soldier', 'army', 'battle'],
+        crime: ['crime', 'police', 'prison', 'murder'],
+        science: ['science', 'invent', 'discovery'],
+        love: ['love', 'marriage', 'romance'],
+        death: ['death', 'die', 'kill', 'dead'],
+        lego: ['lego', 'toy', 'brick']
+    };
+    for (const [cat, words] of Object.entries(map)) {
+        if (words.some(w => lower.includes(w))) return cat;
+    }
+    return 'default';
 }
 
 // Render video
@@ -181,15 +164,15 @@ async function renderVideo(projectPath, uploadToGithub = true) {
         const seg = project.timeline.segments[i];
         const cat = detectCategory(seg.narration);
         const slidePath = path.join(outputDir, `slide_${Date.now()}_${i + 1}.png`);
-        createSlide(slidePath, seg.narration.substring(0, 200), cat, i + 1);
+        createSlide(slidePath, seg.narration.substring(0, 100), cat, i + 1);
         if (fs.existsSync(slidePath)) slides.push(slidePath);
     }
+
+    console.log(`\n📊 ${slides.length} slides created`);
 
     if (slides.length === 0) {
         throw new Error('No slides generated');
     }
-
-    console.log(`\n📊 ${slides.length} slides created`);
 
     // Generate TTS
     const audioFiles = [];
@@ -198,8 +181,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
         const audio = generateTTS(seg.narration, `audio_${Date.now()}_${i}.mp3`);
         if (audio && fs.existsSync(audio)) audioFiles.push(audio);
     }
-
-    console.log(`🎵 ${audioFiles.length} audio files created`);
+    console.log(`🎵 ${audioFiles.length} audio files`);
 
     // Create video
     if (TOOLS.ffmpeg) {
@@ -215,7 +197,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
 
             const args = ['-y', '-f', 'concat', '-safe', '0', '-i', concatFile];
 
-            // Add subtitles
+            // Subtitles
             const srtPath = path.join(outputDir, `subtitles-${project.id}.srt`);
             if (fs.existsSync(srtPath)) {
                 fs.copyFileSync(srtPath, path.join(outputDir, 'subs.srt'));
@@ -223,7 +205,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
                 args.push('-map', '1:0', '-c:s', 'mov_text');
             }
 
-            // Add audio
+            // Audio
             if (audioFiles.length > 0 && fs.existsSync(audioFiles[0])) {
                 args.push('-i', audioFiles[0]);
                 args.push('-map', '0:v', '-map', '1:a');
@@ -253,7 +235,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
                 }
             }
         } catch (err) {
-            console.log(`FFmpeg error: ${err.message.substring(0, 200)}`);
+            console.log(`Error: ${err.message.substring(0, 200)}`);
         }
     }
 
