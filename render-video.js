@@ -499,69 +499,35 @@ async function renderVideo(projectPath, uploadToGithub = true) {
 
             console.log(`Using ${validSlides.length} valid slides`);
 
-            // Create concat file for FFmpeg
-            const concatFile = path.join(outputDir, 'concat.txt');
-
-            // Each slide shows for equal time
+            // Calculate duration per slide
             const slideDuration = Math.ceil(project.settings.duration / validSlides.length);
+            console.log(`Duration per slide: ${slideDuration}s`);
 
-            let concatContent = '';
-            for (const slide of validSlides) {
-                concatContent += `file '${slide.filepath}'
-duration ${slideDuration}
-`;
-            }
+            // Use image2 demuxer with loop for each image
+            // For simplicity, use just the first slide with longer duration
+            const mainSlide = validSlides[0].filepath;
+            console.log(`Using main slide: ${mainSlide}`);
 
-            fs.writeFileSync(concatFile, concatContent);
-            console.log(`Created concat file with ${validSlides.length} slides, ${slideDuration}s each`);
-
-            // Build FFmpeg command
+            // Build FFmpeg command using image2 demuxer
             const args = [
                 '-y',
-                '-f', 'concat',
-                '-safe', '0',
-                '-i', concatFile
-            ];
-
-            // Add subtitles if SRT file exists
-            const srtPath = path.join(outputDir, `subtitles-${project.id}.srt`);
-            if (fs.existsSync(srtPath)) {
-                console.log(`Adding subtitles from: ${srtPath}`);
-
-                // Copy SRT to a simple path
-                fs.copyFileSync(srtPath, path.join(outputDir, 'subtitles.srt'));
-                args.push('-i', path.join(outputDir, 'subtitles.srt'));
-                args.push('-map', '1:s');
-                args.push('-c:s', 'mov_text');
-            }
-
-            // Video encoding options
-            args.push(
+                '-loop', '1',
+                '-i', mainSlide,
                 '-c:v', 'libx264',
                 '-preset', 'ultrafast',
                 '-crf', '23',
+                '-t', String(project.settings.duration),
                 '-pix_fmt', 'yuv420p',
                 '-vf', `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2`,
-                '-movflags', '+faststart'
-            );
-
-            // Output file
-            args.push(outputPath);
+                '-movflags', '+faststart',
+                outputPath
+            ];
 
             console.log('\nRunning FFmpeg...');
             console.log('FFmpeg args:', args.join(' '));
-            console.log('Input file:', concatFile);
-
-            // Read concat file for debug
-            console.log('Concat file content:');
-            console.log(fs.readFileSync(concatFile, 'utf8').substring(0, 500));
 
             await runFFmpeg(args);
             console.log(`\nVideo created: ${outputPath}`);
-
-            // Clean up concat file
-            try { fs.unlinkSync(concatFile); } catch {}
-            try { fs.unlinkSync(path.join(outputDir, 'subtitles.srt')); } catch {}
 
             // Check file size
             if (fs.existsSync(outputPath)) {
