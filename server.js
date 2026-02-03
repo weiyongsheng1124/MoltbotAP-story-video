@@ -89,12 +89,13 @@ app.post('/api/render/:projectId', async (req, res) => {
     try {
         const projectId = req.params.projectId;
         const projectPath = path.join(__dirname, 'output', `project-${projectId}.json`);
+        const uploadGithub = req.query.upload !== 'false';
 
         if (!require('fs').existsSync(projectPath)) {
             return res.status(404).json({ success: false, error: 'Project not found' });
         }
 
-        const outputPath = await renderer.renderVideo(projectPath);
+        const { outputPath, githubUrl } = await renderer.renderVideo(projectPath, uploadGithub);
 
         // Get filename from path
         const filename = path.basename(outputPath);
@@ -103,7 +104,8 @@ app.post('/api/render/:projectId', async (req, res) => {
             success: true,
             video: outputPath,
             downloadUrl: `/api/download/${filename}`,
-            message: 'Video rendered successfully'
+            githubUrl: githubUrl,
+            message: githubUrl ? 'Video rendered and uploaded to GitHub!' : 'Video rendered (upload failed)'
         });
     } catch (err) {
         console.error('Render error:', err);

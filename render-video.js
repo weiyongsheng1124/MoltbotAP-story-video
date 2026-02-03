@@ -1,11 +1,12 @@
 /**
- * Video Renderer - FREE Version
+ * Video Renderer - FREE Version with GitHub Auto-Upload
  * Uses FFmpeg + FREE tools (no API keys required!)
  */
 
 const fs = require('fs');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
+require('dotenv').config();
 
 const CONFIG = {
     VIDEO: {
@@ -14,8 +15,86 @@ const CONFIG = {
         fps: 30,
         bgColor: '#1a1a2e'
     },
-    OUTPUT_DIR: path.join(__dirname, 'output')
+    OUTPUT_DIR: path.join(__dirname, 'output'),
+    GITHUB_REPO: 'weiyongsheng1124/MoltbotAP-story-video',
+    GITHUB_BRANCH: 'main',
+    VIDEO_DIR: 'video'
 };
+
+// GitHub upload helper
+function uploadToGitHub(filepath, commitMessage) {
+    return new Promise((resolve, reject) => {
+        // Get video filename
+        const filename = path.basename(filepath);
+        const destPath = path.join(CONFIG.VIDEO_DIR, filename);
+
+        console.log(`\n📤 Uploading to GitHub: ${destPath}`);
+
+        // Copy file to video directory
+        const videoDir = CONFIG.VIDEO_DIR;
+        if (!fs.existsSync(videoDir)) {
+            fs.mkdirSync(videoDir, { recursive: true });
+        }
+
+        const destFilepath = path.join(videoDir, filename);
+        fs.copyFileSync(filepath, destFilepath);
+        console.log(`  ✓ Copied to ${destFilepath}`);
+
+        // Git add, commit, push
+        const gitCommands = [
+            ['git', 'add', '-A'],
+            ['git', 'commit', '-m', commitMessage],
+            ['git', 'push', 'origin', CONFIG.GITHUB_BRANCH]
+        ];
+
+        let step = 0;
+
+        function runNextCommand() {
+            if (step >= gitCommands.length) {
+                console.log(`  ✓ Uploaded to GitHub: https://github.com/${CONFIG.GITHUB_REPO}/blob/main/${destPath}`);
+                resolve(`https://github.com/${CONFIG.GITHUB_REPO}/blob/main/${destPath}`);
+                return;
+            }
+
+            const [cmd, ...args] = gitCommands[step];
+            console.log(`  Running: ${cmd} ${args.join(' ')}`);
+
+            const child = spawn(cmd, args, {
+                cwd: path.join(__dirname, '..'),
+                stdio: 'pipe'
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            child.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+
+            child.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+
+            child.on('close', (code) => {
+                if (code !== 0) {
+                    // Check if it's just "nothing to commit"
+                    if (step === 1 && stderr.includes('nothing to commit')) {
+                        console.log('  ✓ Already up to date');
+                        resolve(`https://github.com/${CONFIG.GITHUB_REPO}/blob/main/${destPath}`);
+                        return;
+                    }
+                    console.log(`  ⚠️ Git command failed (code ${code}): ${stderr.substring(0, 200)}`);
+                    resolve(null); // Don't reject, just warn
+                    return;
+                }
+                step++;
+                runNextCommand();
+            });
+        }
+
+        runNextCommand();
+    });
+}
 
 // Check what tools are available
 function checkAvailableTools() {
@@ -168,7 +247,7 @@ function runFFmpeg(args) {
 }
 
 // Render complete video project
-async function renderVideo(projectPath) {
+async function renderVideo(projectPath, uploadToGithub = true) {
     console.log(`\nRendering Video Project: ${projectPath}`);
 
     // Check available tools
@@ -221,6 +300,8 @@ async function renderVideo(projectPath) {
     const outputFile = `story_video_${Date.now()}.mp4`;
     const outputPath = path.join(outputDir, outputFile);
 
+    let githubUrl = null;
+
     if (tools.ffmpeg) {
         try {
             // Simple concat using FFmpeg
@@ -238,6 +319,22 @@ async function renderVideo(projectPath) {
             console.log('\nRunning FFmpeg...');
             await runFFmpeg(args);
             console.log(`\nVideo created: ${outputPath}`);
+
+            // Upload to GitHub
+            if (uploadToGithub && fs.existsSync(outputPath)) {
+                const fileSize = fs.statSync(outputPath).size;
+                console.log(`\n📦 Video file size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
+
+                if (fileSize > 1000) { // Only upload if file is > 1KB
+                    githubUrl = await uploadToGitHub(
+                        outputPath,
+                        `Add video: ${project.title}`
+                    );
+                } else {
+                    console.log('\n⚠️ Video file too small, skipping upload');
+                }
+            }
+
         } catch (err) {
             console.log(`FFmpeg error: ${err.message}`);
             createPlaceholder(outputPath, project, slides, subscribeAnim, tools);
@@ -247,7 +344,7 @@ async function renderVideo(projectPath) {
         createPlaceholder(outputPath, project, slides, subscribeAnim, tools);
     }
 
-    return outputPath;
+    return { outputPath, githubUrl };
 }
 
 // Create placeholder info when tools unavailable
@@ -292,6 +389,7 @@ module.exports = {
     generateGradientImage,
     generateSubscribeAnimation,
     renderVideo,
+    uploadToGitHub,
     checkAvailableTools,
     CONFIG
 };
@@ -299,6 +397,7 @@ module.exports = {
 // Run if called directly
 if (require.main === module) {
     const projectPath = process.argv[2] || path.join(CONFIG.OUTPUT_DIR, 'project-*.json').replace('*', '*');
+    const uploadGithub = process.argv[3] !== '--no-upload';
 
     const files = fs.readdirSync(CONFIG.OUTPUT_DIR).filter(f => f.startsWith('project-'));
     if (files.length === 0) {
@@ -309,7 +408,12 @@ if (require.main === module) {
     const latestProject = files.sort().pop();
     const fullProjectPath = path.join(CONFIG.OUTPUT_DIR, latestProject);
 
-    renderVideo(fullProjectPath)
-        .then(() => process.exit(0))
+    renderVideo(fullProjectPath, uploadGithub)
+        .then(({ outputPath, githubUrl }) => {
+            if (githubUrl) {
+                console.log(`\n🎉 GitHub URL: ${githubUrl}`);
+            }
+            process.exit(0);
+        })
         .catch(() => process.exit(1));
 }
