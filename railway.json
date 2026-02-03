@@ -12,7 +12,11 @@
   },
   "env": {
     "OPENAI_API_KEY": {
-      "description": "Optional: Add OpenAI API key for premium TTS/images (system works FREE without it)",
+      "description": "Optional: OpenAI API key for premium TTS/images",
+      "required": false
+    },
+    "GITHUB_TOKEN": {
+      "description": "GitHub Personal Access Token for auto-uploading videos (optional)",
       "required": false
     }
   }

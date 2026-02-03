@@ -21,79 +21,81 @@ const CONFIG = {
     VIDEO_DIR: 'video'
 };
 
-// GitHub upload helper
-function uploadToGitHub(filepath, commitMessage) {
-    return new Promise((resolve, reject) => {
-        // Get video filename
-        const filename = path.basename(filepath);
-        const destPath = path.join(CONFIG.VIDEO_DIR, filename);
+// GitHub upload helper - uses GitHub API
+async function uploadToGitHub(filepath, commitMessage) {
+    const axios = require('axios');
+    const filename = path.basename(filepath);
+    const destPath = path.join(CONFIG.VIDEO_DIR, filename);
 
-        console.log(`\n📤 Uploading to GitHub: ${destPath}`);
+    console.log(`\n📤 Uploading to GitHub: ${destPath}`);
 
-        // Copy file to video directory
-        const videoDir = CONFIG.VIDEO_DIR;
-        if (!fs.existsSync(videoDir)) {
-            fs.mkdirSync(videoDir, { recursive: true });
+    // Read file content
+    const fileContent = fs.readFileSync(filepath, 'base64');
+    const fileSize = Buffer.byteLength(fileContent, 'base64');
+
+    console.log(`  File size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
+
+    // Check for GitHub token
+    const githubToken = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT;
+    const repo = CONFIG.GITHUB_REPO;
+    const [owner, repoName] = repo.split('/');
+
+    if (!githubToken) {
+        console.log('  ⚠️ No GitHub token found. Skipping upload.');
+        console.log('  Set GITHUB_TOKEN or GITHUB_PAT environment variable.');
+        return null;
+    }
+
+    try {
+        // Get current file SHA (if exists)
+        let sha = null;
+        try {
+            const existingFile = await axios.get(
+                `https://api.github.com/repos/${owner}/${repoName}/contents/${destPath}`,
+                { headers: { Authorization: `token ${githubToken}` } }
+            );
+            sha = existingFile.data.sha;
+            console.log('  Found existing file, will update...');
+        } catch (e) {
+            console.log('  New file, will create...');
         }
 
-        const destFilepath = path.join(videoDir, filename);
-        fs.copyFileSync(filepath, destFilepath);
-        console.log(`  ✓ Copied to ${destFilepath}`);
+        // Upload file
+        const content = fileContent;
+        const payload = {
+            message: commitMessage,
+            content: content,
+            branch: CONFIG.GITHUB_BRANCH
+        };
 
-        // Git add, commit, push
-        const gitCommands = [
-            ['git', 'add', '-A'],
-            ['git', 'commit', '-m', commitMessage],
-            ['git', 'push', 'origin', CONFIG.GITHUB_BRANCH]
-        ];
+        if (sha) {
+            payload.sha = sha;
+        }
 
-        let step = 0;
+        console.log(`  Uploading to: https://api.github.com/repos/${owner}/${repoName}/contents/${destPath}`);
 
-        function runNextCommand() {
-            if (step >= gitCommands.length) {
-                console.log(`  ✓ Uploaded to GitHub: https://github.com/${CONFIG.GITHUB_REPO}/blob/main/${destPath}`);
-                resolve(`https://github.com/${CONFIG.GITHUB_REPO}/blob/main/${destPath}`);
-                return;
-            }
-
-            const [cmd, ...args] = gitCommands[step];
-            console.log(`  Running: ${cmd} ${args.join(' ')}`);
-
-            const child = spawn(cmd, args, {
-                cwd: path.join(__dirname, '..'),
-                stdio: 'pipe'
-            });
-
-            let stdout = '';
-            let stderr = '';
-
-            child.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-
-            child.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-
-            child.on('close', (code) => {
-                if (code !== 0) {
-                    // Check if it's just "nothing to commit"
-                    if (step === 1 && stderr.includes('nothing to commit')) {
-                        console.log('  ✓ Already up to date');
-                        resolve(`https://github.com/${CONFIG.GITHUB_REPO}/blob/main/${destPath}`);
-                        return;
-                    }
-                    console.log(`  ⚠️ Git command failed (code ${code}): ${stderr.substring(0, 200)}`);
-                    resolve(null); // Don't reject, just warn
-                    return;
+        const response = await axios.put(
+            `https://api.github.com/repos/${owner}/${repoName}/contents/${destPath}`,
+            payload,
+            {
+                headers: {
+                    Authorization: `token ${githubToken}`,
+                    Accept: 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
                 }
-                step++;
-                runNextCommand();
-            });
-        }
+            }
+        );
 
-        runNextCommand();
-    });
+        const downloadUrl = response.data.content.download_url;
+        console.log(`  ✓ Uploaded successfully!`);
+        console.log(`  URL: ${downloadUrl}`);
+
+        return downloadUrl;
+
+    } catch (err) {
+        console.log(`  ⚠️ Upload failed: ${err.response?.data?.message || err.message}`);
+        return null;
+    }
 }
 
 // Check what tools are available
@@ -320,7 +322,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
             await runFFmpeg(args);
             console.log(`\nVideo created: ${outputPath}`);
 
-            // Upload to GitHub
+            // Upload to GitHub via API
             if (uploadToGithub && fs.existsSync(outputPath)) {
                 const fileSize = fs.statSync(outputPath).size;
                 console.log(`\n📦 Video file size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);

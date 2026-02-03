@@ -10,6 +10,7 @@ Generate 1-minute animated story videos with **FREE** tools - no API keys requir
 - **FREE Images**: Uses ImageMagick or PIL (Python)
 - **Subtitles**: Burned-in English subtitles (SRT format)
 - **Subscribe Button**: Animated CTA at video end
+- **Auto-Upload**: Videos automatically upload to GitHub `video/` folder
 - **Vertical Format**: 9:16 aspect ratio (1080x1920) for Reels/Shorts
 
 ## Quick Start
@@ -21,7 +22,7 @@ cd /workspaces/MoltbotAP/story-video
 npm install
 ```
 
-### Install FREE Tools (Optional but recommended)
+### Install FREE Tools (Optional)
 
 #### Linux (Ubuntu/Debian)
 ```bash
@@ -33,19 +34,12 @@ sudo apt-get install ffmpeg imagemagick espeak-ng
 brew install ffmpeg imagemagick espeak-ng
 ```
 
-#### Windows
-- FFmpeg: https://ffmpeg.org/download.html
-- ImageMagick: https://imagemagick.org/script/download.php
-- espeak-ng: https://github.com/espeak-ng/espeak-ng/releases
-
 ### Generate a Video
 
 ```bash
-# Generate story project
-node generator.js
-
-# Render video (requires FFmpeg)
-node render-video.js
+# Generate and render video in one command
+node server.js &
+curl -X POST http://localhost:3000/api/auto-generate
 ```
 
 ## API Server
@@ -60,20 +54,49 @@ npm start
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/generate` | Generate new video project |
+| POST | `/api/auto-generate` | ⭐ Generate + Render + Upload (ONE COMMAND) |
+| POST | `/api/generate` | Generate story project only |
 | POST | `/api/render/:projectId` | Render video to MP4 |
 | GET | `/api/status/:projectId` | Check project status |
 | GET | `/api/projects` | List recent projects |
+| GET | `/api/files` | List output files |
 | GET | `/health` | Health check |
 
 ### Example Usage
 
 ```bash
-# Generate video
-curl -X POST http://localhost:3000/api/generate
+# Auto-generate (all in one)
+curl -X POST http://localhost:3000/api/auto-generate
 
-# Render it
-curl -X POST http://localhost:3000/api/render/[project-id]
+# Response:
+# {
+#   "success": true,
+#   "githubUrl": "https://github.com/.../video/story_video_xxx.mp4",
+#   "message": "Video generated and uploaded to GitHub!"
+# }
+```
+
+## Auto-Upload to GitHub
+
+To automatically upload generated videos to your GitHub repository:
+
+### 1. Create GitHub Personal Access Token
+
+1. Go to https://github.com/settings/tokens
+2. Generate new token (classic)
+3. Select `repo` scope
+4. Copy the token
+
+### 2. Add Token to Railway
+
+1. Go to https://railway.app
+2. Open your project
+3. Click "Variables"
+4. Add: `GITHUB_TOKEN=your_token_here`
+
+### 3. Videos Auto-Upload to:
+```
+https://github.com/yourusername/MoltbotAP-story-video/tree/main/video/
 ```
 
 ## RSS Story Sources
@@ -101,7 +124,7 @@ Animated CTA sequence:
 - **3-4s**: "SUBSCRIBE!" text appears
 - **4-5s**: Golden bell wiggle animation
 
-## Installation on Railway
+## Deployment to Railway
 
 ### 1. Create GitHub Repo
 ```bash
@@ -118,40 +141,51 @@ git push origin main
 2. Login with GitHub
 3. Click "New Project"
 4. Select your repo
-5. No environment variables needed (100% FREE!)
+5. Optional: Add `GITHUB_TOKEN` variable for auto-upload
 
-### 3. Install FFmpeg on Railway
+### 3. Railway Configuration
 
-Add to `railway.json`:
-```json
-{
-  "build": {
-    "nixpacks": {
-      "aptPackages": ["ffmpeg", "imagemagick", "espeak-ng"]
-    }
-  }
-}
+The `railway.json` file includes:
+- FFmpeg, ImageMagick, espeak-ng for video generation
+- Python3 for image generation fallback
+- Health check endpoint
+
+## Auto-Generate Cron Job
+
+Automatically generate videos every 6 hours:
+
+```bash
+# Using OpenClaw cron
+/cron add --schedule "0 */6 * * *" --payload "Call /api/auto-generate"
+```
+
+Or manually:
+```bash
+curl -X POST https://your-app.up.railway.app/api/auto-generate
 ```
 
 ## Requirements
 
 - Node.js 18+
-- FFmpeg (optional, for MP4 rendering)
-- ImageMagick (optional, for image generation)
-- espeak-ng (optional, for TTS)
+- FFmpeg (installed via Railway apt packages)
+- ImageMagick (installed via Railway apt packages)
+- GitHub Token (optional, for auto-upload)
 
 ## Project Structure
 
 ```
 story-video/
-├── server.js          # Express API server
-├── generator.js       # Story fetching and script generation
-├── render-video.js    # FFmpeg video rendering
-├── railway.json       # Railway deployment config
-├── package.json       # Dependencies
-├── .env.example       # Environment template
-├── README.md          # This file
-└── output/           # Generated files
+├── server.js           # Express API server
+├── generator.js        # Story fetching and script generation
+├── render-video.js     # FFmpeg video rendering + GitHub upload
+├── railway.json        # Railway deployment config
+├── auto-generate.sh    # Quick generate script
+├── cron-auto-generate.sh # Cron script for auto-generation
+├── package.json        # Dependencies
+├── .env.example        # Environment template
+├── README.md           # This file
+├── output/            # Generated files
+└── video/            # Uploaded videos (GitHub)
 ```
 
 ## Troubleshooting
@@ -164,14 +198,13 @@ The system will create placeholder files. Install FFmpeg for MP4 output:
 ### ImageMagick not available
 Images will use Python PIL fallback if available.
 
-### espeak-ng not available
-TTS will use placeholder audio files.
+### GitHub upload failed
+Check that `GITHUB_TOKEN` is set with `repo` scope.
 
 ## Future Enhancements
 
 - [ ] Multiple language support
 - [ ] Background music library (royalty-free)
-- [ ] Batch video generation
 - [ ] YouTube Upload API integration
 - [ ] Template system for different styles
 
