@@ -1,14 +1,14 @@
 # Story Video Generator - Dockerfile
-# Installs FFmpeg, ImageMagick, and Python for video generation
+# Installs FFmpeg, Python with PIL for video generation
 
 FROM node:18-alpine
 
-# Install FFmpeg, ImageMagick, Python, and other tools
+# Install FFmpeg, Python, and other tools
 RUN apk add --no-cache \
     ffmpeg \
-    imagemagick \
     python3 \
     py3-pip \
+    py3-pillow \
     git \
     bash
 

@@ -133,75 +133,111 @@ function checkAvailableTools() {
 // Check what tools are available (run once at module load)
 const AVAILABLE_TOOLS = checkAvailableTools();
 
-// Generate gradient background image (FREE - no API needed)
+// Generate gradient background image with Python (most reliable)
 function generateGradientImage(text, bgColor, duration, index) {
     const outputDir = CONFIG.OUTPUT_DIR;
     const filename = `slide_${Date.now()}_${index}.png`;
     const filepath = path.join(outputDir, filename);
 
-    // Create gradient background using ImageMagick if available
-    if (AVAILABLE_TOOLS.imagemagick) {
-        try {
-            const colors = [
-                '#1a1a2e', '#16213e', '#0f3460', '#533483',
-                '#e94560', '#ff6b6b', '#4ecdc4', '#45b7d1'
-            ];
-            const color1 = colors[index % colors.length];
-            const color2 = colors[(index + 1) % colors.length];
+    const colors = [
+        '#1a1a2e', '#16213e', '#0f3460', '#533483',
+        '#e94560', '#ff6b6b', '#4ecdc4', '#45b7d1'
+    ];
+    const color1 = colors[index % colors.length];
+    const color2 = colors[(index + 1) % colors.length];
 
-            // Escape text for ImageMagick
-            const safeText = text.substring(0, 80).replace(/"/g, '\\"').replace(/'/g, "\\'");
-
-            // Create gradient with text overlay
-            const cmd = `convert -size 1080x1920 gradient:${color1}-${color2} -gravity center -pointsize 42 -fill white -annotate 0 "${safeText}" ${filepath}`;
-
-            execSync(cmd, { stdio: 'pipe' });
-            console.log(`Generated image: ${filename}`);
-
-            // Create info file alongside
-            fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, color1, color2, duration, index }));
-
-            return { filepath, duration, text };
-        } catch (err) {
-            console.log(`ImageMagick error: ${err.message}`);
-        }
-    }
-
-    // Fallback: create simple colored PNG with Python/PIL
+    // Use Python PIL for reliable image generation
     if (AVAILABLE_TOOLS.python3) {
         try {
+            // Create gradient using PIL
             const pythonCode = `
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
+import math
 
-img = PIL.Image.new('RGB', (1080, 1920), '${bgColor}')
+WIDTH, HEIGHT = 1080, 1920
+filename = "${filepath}"
+text = """${text.replace(/"/g, '\\"').replace(/\n/g, ' ').substring(0, 120)}"""
+color1 = "${color1}"
+color2 = "${color2}"
+
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+c1 = hex_to_rgb(color1)
+c2 = hex_to_rgb(color2)
+
+# Create gradient background
+img = PIL.Image.new('RGB', (WIDTH, HEIGHT), c1)
 draw = PIL.ImageDraw.Draw(img)
 
-# Add some decorative circles
-for i in range(5):
-    x = 540 + (i - 2) * 200
-    y = 960 + (i % 2) * 300
-    r = 100 + i * 50
-    draw.ellipse([x-r, y-r, x+r, y+r], outline='white', width=3)
+for y in range(HEIGHT):
+    ratio = y / HEIGHT
+    r = int(c1[0] + (c2[0] - c1[0]) * ratio)
+    g = int(c1[1] + (c2[1] - c1[1]) * ratio)
+    b = int(c1[2] + (c2[2] - c1[2]) * ratio)
+    draw.line([(0, y), (WIDTH, y)], fill=(r, g, b))
 
-img.save('${filepath}')
+# Add decorative circles
+for i in range(8):
+    x = WIDTH // 2 + (i - 3.5) * 180
+    y = HEIGHT // 2 + (i % 2) * 200 - 200
+    r = 80 + i * 30
+    alpha = 30 if i % 2 == 0 else 20
+    draw.ellipse([x-r, y-r, x+r, y+r], outline=(255, 255, 255, alpha), width=2)
+
+# Add text with shadow
+shadow_offset = 3
+draw.text((WIDTH//2 + shadow_offset, HEIGHT//2 + shadow_offset), text, fill=(0, 0, 0), anchor="mm", font_size=48)
+draw.text((WIDTH//2, HEIGHT//2), text, fill=(255, 255, 255), anchor="mm", font_size=48)
+
+# Add story indicator
+indicator_text = f"Part {${index + 1}}"
+draw.text((60, 60), indicator_text, fill=(255, 255, 255), font_size=32)
+
+# Add progress bar
+bar_height = 8
+progress = ${index} / 7
+draw.rectangle([(0, HEIGHT - bar_height), (WIDTH * progress, HEIGHT)], fill=(255, 100, 100))
+
+img.save(filename, quality=95)
+print(f"Created: {filename}")
 `;
-            fs.writeFileSync('/tmp/gen_image.py', pythonCode);
-            execSync('python3 /tmp/gen_image.py', { cwd: outputDir });
-            console.log(`Generated image (Python): ${filename}`);
 
-            fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, bgColor, duration, index, method: 'python' }));
+            fs.writeFileSync('/tmp/gen_image.py', pythonCode);
+            execSync('python3 /tmp/gen_image.py', { cwd: outputDir, stdio: 'pipe' });
+
+            console.log(`Generated image: ${filename}`);
+
+            // Create info file
+            fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({
+                text: text.substring(0, 100),
+                color1, color2,
+                duration, index,
+                method: 'python-pil'
+            }));
 
             return { filepath, duration, text };
-        } catch (err2) {
-            console.log(`Python fallback error: ${err2.message}`);
+        } catch (err) {
+            console.log(`Python image error: ${err.message}`);
         }
     }
 
-    // Final fallback: create placeholder info file
-    fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, bgColor, duration, index, method: 'none' }));
-    console.log(`Created placeholder: ${filename}`);
+    // Final fallback: create minimal valid PNG
+    try {
+        // Create 1x1 pixel PNG and scale
+        const minimalPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+        fs.writeFileSync(filepath, minimalPng);
+
+        fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, bgColor, duration, index, method: 'minimal' }));
+        console.log(`Created minimal: ${filename}`);
+
+        return { filepath, duration, text };
+    } catch (err) {
+        console.log(`Fallback error: ${err.message}`);
+    }
 
     return { filepath, duration, text };
 }
@@ -328,56 +364,94 @@ async function renderVideo(projectPath, uploadToGithub = true) {
 
     let githubUrl = null;
 
-    if (AVAILABLE_TOOLS.ffmpeg && AVAILABLE_TOOLS.imagemagick) {
+    // Use FFmpeg if available
+    if (AVAILABLE_TOOLS.ffmpeg && AVAILABLE_TOOLS.python3) {
         try {
-            // Create concat file for multiple slides
+            // Verify all slide images exist and are valid
+            const validSlides = slides.filter(s => {
+                try {
+                    return fs.existsSync(s.filepath) && fs.statSync(s.filepath).size > 100;
+                } catch { return false; }
+            });
+
+            if (validSlides.length === 0) {
+                throw new Error('No valid slide images found');
+            }
+
+            console.log(`Using ${validSlides.length} valid slides`);
+
+            // Create concat file for FFmpeg
             const concatFile = path.join(outputDir, 'concat.txt');
-            const concatContent = slides.map(slide => {
-                const duration = slide.duration || 10;
-                return `file '${slide.filepath}'
-duration ${duration}`;
-            }).join('\n') + '\n';
+
+            // Each slide shows for equal time
+            const slideDuration = Math.ceil(project.settings.duration / validSlides.length);
+
+            let concatContent = '';
+            for (const slide of validSlides) {
+                concatContent += `file '${slide.filepath}'
+duration ${slideDuration}
+`;
+            }
 
             fs.writeFileSync(concatFile, concatContent);
-            console.log(`Created concat file: ${concatFile}`);
+            console.log(`Created concat file with ${validSlides.length} slides, ${slideDuration}s each`);
 
-            // Use FFmpeg concat demuxer
+            // Build FFmpeg command
             const args = [
                 '-y',
                 '-f', 'concat',
                 '-safe', '0',
-                '-i', concatFile,
+                '-i', concatFile
+            ];
+
+            // Add subtitles if SRT file exists
+            const srtPath = path.join(outputDir, `subtitles-${project.id}.srt`);
+            if (fs.existsSync(srtPath)) {
+                console.log(`Adding subtitles from: ${srtPath}`);
+
+                // Copy SRT to a simple path
+                fs.copyFileSync(srtPath, path.join(outputDir, 'subtitles.srt'));
+                args.push('-i', path.join(outputDir, 'subtitles.srt'));
+                args.push('-map', '1:s');
+                args.push('-c:s', 'mov_text');
+            }
+
+            // Video encoding options
+            args.push(
                 '-c:v', 'libx264',
                 '-preset', 'ultrafast',
                 '-crf', '23',
                 '-pix_fmt', 'yuv420p',
-                '-vf', `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
-                '-movflags', '+faststart',
-                outputPath
-            ];
+                '-vf', `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2`,
+                '-movflags', '+faststart'
+            );
+
+            // Output file
+            args.push(outputPath);
 
             console.log('\nRunning FFmpeg...');
-            console.log('Args:', args.join(' '));
-
             await runFFmpeg(args);
             console.log(`\nVideo created: ${outputPath}`);
 
             // Clean up concat file
             try { fs.unlinkSync(concatFile); } catch {}
+            try { fs.unlinkSync(path.join(outputDir, 'subtitles.srt')); } catch {}
 
-            // Upload to GitHub via API
-            if (uploadToGithub && fs.existsSync(outputPath)) {
+            // Check file size
+            if (fs.existsSync(outputPath)) {
                 const fileSize = fs.statSync(outputPath).size;
                 console.log(`\n📦 Video file size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
 
-                if (fileSize > 1000) { // Only upload if file is > 1KB
-                    githubUrl = await uploadToGitHub(
-                        outputPath,
-                        `Add video: ${project.title}`
-                    );
+                if (fileSize > 10000) { // > 10KB
+                    // Upload to GitHub via API
+                    if (uploadToGithub) {
+                        githubUrl = await uploadToGitHub(
+                            outputPath,
+                            `Add video: ${project.title}`
+                        );
+                    }
                 } else {
                     console.log('\n⚠️ Video file too small, skipping upload');
-                    createPlaceholder(outputPath, project, slides, subscribeAnim, tools);
                 }
             }
 
@@ -386,7 +460,7 @@ duration ${duration}`;
             createPlaceholder(outputPath, project, slides, subscribeAnim, AVAILABLE_TOOLS);
         }
     } else {
-        console.log('\nFFmpeg or ImageMagick not available - creating placeholder...');
+        console.log('\nFFmpeg or Python not available - creating placeholder...');
         createPlaceholder(outputPath, project, slides, subscribeAnim, AVAILABLE_TOOLS);
     }
 
