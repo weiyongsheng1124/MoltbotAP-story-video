@@ -133,113 +133,230 @@ function checkAvailableTools() {
 // Check what tools are available (run once at module load)
 const AVAILABLE_TOOLS = checkAvailableTools();
 
-// Generate gradient background image with Python (most reliable)
-function generateGradientImage(text, bgColor, duration, index) {
+// Draw simple icons based on keywords
+function drawIcon(draw, x, y, size, category) {
+    const colors = {
+        person: '#FF6B6B',
+        history: '#4ECDC4',
+        money: '#FFE66D',
+        food: '#95E1D3',
+        animal: '#DDA0DD',
+        war: '#E74C3C',
+        crime: '#2C3E50',
+        science: '#3498DB',
+        love: '#FF69B4',
+        death: '#7F8C8D',
+        default: '#FFFFFF'
+    };
+
+    const color = colors[category] || colors.default;
+    draw.ellipse([x - size/2, y - size/2], [x + size/2, y + size/2], fill=color, width=3);
+
+    // Add symbol based on category
+    const symbols = {
+        person: '👤',
+        history: '📜',
+        money: '💰',
+        food: '🍽️',
+        animal: '🐾',
+        war: '⚔️',
+        crime: '🔍',
+        science: '🔬',
+        love: '❤️',
+        death: '💀'
+    };
+
+    return symbols[category] || '⭐';
+}
+
+// Generate image with story-relevant visual
+function generateStoryImage(text, bgColor, duration, index, keywords = []) {
     const outputDir = CONFIG.OUTPUT_DIR;
     const filename = `slide_${Date.now()}_${index}.png`;
     const filepath = path.join(outputDir, filename);
 
-    const colors = [
-        '#1a1a2e', '#16213e', '#0f3460', '#533483',
-        '#e94560', '#ff6b6b', '#4ecdc4', '#45b7d1'
-    ];
-    const color1 = colors[index % colors.length];
-    const color2 = colors[(index + 1) % colors.length];
+    // Determine visual category from keywords
+    const keywordMap = {
+        person: ['man', 'woman', 'people', 'king', 'queen', 'president', 'artist', 'murderer', 'thief'],
+        history: ['year', 'century', 'war', 'ancient', 'history', 'empire', 'battle'],
+        money: ['money', 'gold', 'rich', 'poor', 'dollar', 'cost', 'worth', 'million'],
+        food: ['food', 'eat', 'cook', 'recipe', 'meal', 'restaurant', 'delicious'],
+        animal: ['animal', 'dog', 'cat', 'bird', 'fish', 'wild', 'species'],
+        war: ['war', 'soldier', 'army', 'battle', 'fight', 'weapon', 'military'],
+        crime: ['crime', 'police', 'prison', 'jail', 'steal', 'rob', 'murder', 'kill'],
+        science: ['science', 'invent', 'discovery', 'experiment', 'theory', ' scientist'],
+        love: ['love', 'marriage', 'romance', 'heart', 'wife', 'husband', 'romantic'],
+        death: ['death', 'die', 'kill', 'dead', 'suicide', 'murder', 'execution']
+    };
+
+    let category = 'default';
+    const lowerText = text.toLowerCase();
+
+    for (const [cat, words] of Object.entries(keywordMap)) {
+        if (words.some(w => lowerText.includes(w))) {
+            category = cat;
+            break;
+        }
+    }
 
     // Use Python PIL for reliable image generation
     if (AVAILABLE_TOOLS.python3) {
         try {
-            // Create gradient using PIL
             const pythonCode = `
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
-import math
+import random
 
 WIDTH, HEIGHT = 1080, 1920
 filename = "${filepath}"
-text = """${text.replace(/"/g, '\\"').replace(/\n/g, ' ').substring(0, 120)}"""
-color1 = "${color1}"
-color2 = "${color2}"
+text = """${text.replace(/"/g, '\\"').replace(/\n/g, ' ').replace('\r', '').substring(0, 200)}"""
+category = "${category}"
+bg_color = "${bgColor}"
 
 def hex_to_rgb(hex_color):
     hex_color = hex_color.lstrip('#')
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
-c1 = hex_to_rgb(color1)
-c2 = hex_to_rgb(color2)
+# Background colors based on category
+bg_colors = {
+    'person': '#2C3E50',
+    'history': '#8B4513',
+    'money': '#1a1a2e',
+    'food': '#FF6B6B',
+    'animal': '#228B22',
+    'war': '#8B0000',
+    'crime': '#1a1a1a',
+    'science': '#00008B',
+    'love': '#FF1493',
+    'death': '#2F4F4F',
+    'default': '#16213e'
+}
+
+main_bg = bg_colors.get(category, bg_colors['default'])
 
 # Create gradient background
-img = PIL.Image.new('RGB', (WIDTH, HEIGHT), c1)
+img = PIL.Image.new('RGB', (WIDTH, HEIGHT), hex_to_rgb(main_bg))
 draw = PIL.ImageDraw.Draw(img)
 
-for y in range(HEIGHT):
-    ratio = y / HEIGHT
-    r = int(c1[0] + (c2[0] - c1[0]) * ratio)
-    g = int(c1[1] + (c2[1] - c1[1]) * ratio)
-    b = int(c1[2] + (c2[2] - c1[2]) * ratio)
-    draw.line([(0, y), (WIDTH, y)], fill=(r, g, b))
+# Add subtle pattern
+for i in range(0, WIDTH, 40):
+    draw.line([(i, 0), (i, HEIGHT)], fill=(255, 255, 255, 10), width=1)
 
-# Add decorative circles
-for i in range(8):
-    x = WIDTH // 2 + (i - 3.5) * 180
-    y = HEIGHT // 2 + (i % 2) * 200 - 200
-    r = 80 + i * 30
-    alpha = 30 if i % 2 == 0 else 20
-    draw.ellipse([x-r, y-r, x+r, y+r], outline=(255, 255, 255, alpha), width=2)
+# Add decorative elements based on category
+if category == 'person':
+    # Draw person silhouette
+    draw.ellipse([WIDTH//2 - 150, 200, WIDTH//2 + 150, 500], fill=(255, 255, 255, 30))
+    draw.ellipse([WIDTH//2 - 200, 350, WIDTH//2 + 200, 850], fill=(255, 255, 255, 20))
+elif category == 'history':
+    # Draw ancient paper look
+    for _ in range(5):
+        x = random.randint(100, WIDTH-100)
+        y = random.randint(100, HEIGHT-100)
+        r = random.randint(50, 150)
+        draw.ellipse([x-r, y-r, x+r, y+r], outline=(255, 200, 150, 40), width=2)
+elif category == 'money':
+    # Draw coin circles
+    for i in range(8):
+        x = WIDTH//2 + (i - 3.5) * 100
+        y = 300 + (i % 2) * 100
+        draw.ellipse([x-40, y-40, x+40, y+40], fill=(255, 215, 0, 30), outline=(255, 215, 0, 60), width=3)
+elif category == 'war':
+    # Draw shield pattern
+    for i in range(6):
+        x = WIDTH//2 + (i - 2.5) * 150
+        y = 250 + (i % 3) * 200
+        draw.polygon([(x, y-60), (x+50, y+30), (x, y+80), (x-50, y+30)], outline=(200, 200, 200, 30), width=2)
+elif category == 'default':
+    # Simple geometric pattern
+    for i in range(12):
+        x = WIDTH//2 + (i - 5) * 100
+        y = HEIGHT//2 + (i % 3) * 200 - 200
+        r = 40 + i * 10
+        draw.ellipse([x-r, y-r, x+r, y+r], outline=(255, 255, 255, 15), width=2)
 
-# Add text with shadow
-shadow_offset = 3
-draw.text((WIDTH//2 + shadow_offset, HEIGHT//2 + shadow_offset), text, fill=(0, 0, 0), anchor="mm", font_size=48)
-draw.text((WIDTH//2, HEIGHT//2), text, fill=(255, 255, 255), anchor="mm", font_size=48)
+# Add title bar
+draw.rectangle([(0, 0), (WIDTH, 120)], fill=(0, 0, 0, 180))
 
-# Add story indicator
-indicator_text = f"Part {${index + 1}}"
-draw.text((60, 60), indicator_text, fill=(255, 255, 255), font_size=32)
+# Add "STORY TIME" text
+draw.text((60, 45), "STORY TIME", fill=(255, 100, 100), font_size=32)
+draw.text((60, 75), "Part ${index + 1}", fill=(255, 255, 255), font_size=24)
 
-# Add progress bar
-bar_height = 8
+# Draw text box
+text_box_top = 400
+text_box_height = HEIGHT - 600
+draw.rectangle([(40, text_box_top), (WIDTH-40, text_box_top + text_box_height)], fill=(0, 0, 0, 150), outline=(255, 100, 100), width=3)
+
+# Word wrap for text
+words = text.split()
+lines = []
+current_line = []
+for word in words:
+    test_line = ' '.join(current_line + [word])
+    # Simple word wrap approximation
+    if len(test_line) < 50:
+        current_line.append(word)
+    else:
+        lines.append(' '.join(current_line))
+        current_line = [word]
+if current_line:
+    lines.append(' '.join(current_line))
+
+# Draw each line
+y_pos = text_box_top + 60
+for i, line in enumerate(lines[:12]):  # Max 12 lines
+    color = (255, 100, 100) if i == 0 else (255, 255, 255)
+    draw.text((80, y_pos), line, fill=color, font_size=36 if i == 0 else 32)
+    y_pos += 50
+
+# Add category indicator
+category_icons = {
+    'person': '👤', 'history': '📜', 'money': '💰', 'food': '🍽️',
+    'animal': '🐾', 'war': '⚔️', 'crime': '🔍', 'science': '🔬',
+    'love': '❤️', 'death': '💀', 'default': '⭐'
+}
+icon = category_icons.get(category, category_icons['default'])
+draw.text((WIDTH - 100, 45), icon, font_size=32)
+
+# Add progress bar at bottom
 progress = ${index} / 7
-draw.rectangle([(0, HEIGHT - bar_height), (WIDTH * progress, HEIGHT)], fill=(255, 100, 100))
+draw.rectangle([(0, HEIGHT - 20), (WIDTH * progress, HEIGHT)], fill=(255, 100, 100))
 
 img.save(filename, quality=95)
-print(f"Created: {filename}")
+print(f"Created: {filename} (category: {category})")
 `;
 
             fs.writeFileSync('/tmp/gen_image.py', pythonCode);
             execSync('python3 /tmp/gen_image.py', { cwd: outputDir, stdio: 'pipe' });
 
-            console.log(`Generated image: ${filename}`);
+            console.log(`Generated story image: ${filename} (${category})`);
 
             // Create info file
             fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({
                 text: text.substring(0, 100),
-                color1, color2,
+                category,
                 duration, index,
-                method: 'python-pil'
+                method: 'python-pil-story'
             }));
 
-            return { filepath, duration, text };
+            return { filepath, duration, text, category };
         } catch (err) {
             console.log(`Python image error: ${err.message}`);
         }
     }
 
-    // Final fallback: create minimal valid PNG
+    // Final fallback
     try {
-        // Create 1x1 pixel PNG and scale
         const minimalPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
         fs.writeFileSync(filepath, minimalPng);
-
-        fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, bgColor, duration, index, method: 'minimal' }));
+        fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, category, duration, index, method: 'minimal' }));
         console.log(`Created minimal: ${filename}`);
-
-        return { filepath, duration, text };
+        return { filepath, duration, text, category };
     } catch (err) {
         console.log(`Fallback error: ${err.message}`);
     }
 
-    return { filepath, duration, text };
+    return { filepath, duration, text, category };
 }
 
 // Generate subscribe animation info (FREE - no rendering needed)
@@ -332,11 +449,12 @@ async function renderVideo(projectPath, uploadToGithub = true) {
 
     // Intro slide
     console.log('\nGenerating intro slide...');
-    const introSlide = generateGradientImage(
+    const introSlide = generateStoryImage(
         project.timeline.intro.content?.text || project.title,
         '#1a1a2e',
         project.timeline.intro.duration,
-        0
+        0,
+        [] // No keywords for intro
     );
     slides.push(introSlide);
 
@@ -344,11 +462,12 @@ async function renderVideo(projectPath, uploadToGithub = true) {
     for (let i = 0; i < project.timeline.segments.length; i++) {
         const seg = project.timeline.segments[i];
         console.log(`\nGenerating segment ${i + 1} slide...`);
-        const slide = generateGradientImage(
+        const slide = generateStoryImage(
             seg.content?.text || seg.narration,
             '#2d2d4a',
             seg.duration,
-            i + 1
+            i + 1,
+            seg.narration ? seg.narration.split(' ') : [] // Extract words as pseudo-keywords
         );
         slides.push(slide);
     }
@@ -506,7 +625,7 @@ Or use external rendering service.
 
 // Export functions
 module.exports = {
-    generateGradientImage,
+    generateStoryImage,
     generateSubscribeAnimation,
     renderVideo,
     uploadToGitHub,
