@@ -1,0 +1,19 @@
+{
+  "name": "story-video-generator",
+  "version": "1.0.0",
+  "description": "Generate 1-minute animated stories with AI narration, subtitles, and subscribe button",
+  "main": "generator.js",
+  "scripts": {
+    "start": "node generator.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "rss-parser": "^3.13.0",
+    "openai": "^4.20.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "node-fetch": "^2.7.0",
+    "dotenv": "^16.3.0",
+    "uuid": "^9.0.0"
+  }
+}
