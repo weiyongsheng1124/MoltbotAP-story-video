@@ -1,5 +1,5 @@
 /**
- * Story Video Renderer - JavaScript version (no Python dependency)
+ * Story Video Renderer - Simple PNG generation
  */
 
 const fs = require('fs');
@@ -14,7 +14,7 @@ const CONFIG = {
     VIDEO_DIR: 'video'
 };
 
-// GitHub upload via API
+// GitHub upload
 async function uploadToGitHub(filepath, commitMessage) {
     const axios = require('axios');
     const filename = path.basename(filepath);
@@ -47,7 +47,6 @@ async function uploadToGitHub(filepath, commitMessage) {
 
         return response.data.content.download_url;
     } catch (err) {
-        console.log(`Upload failed: ${err.message}`);
         return null;
     }
 }
@@ -62,37 +61,37 @@ function checkTools() {
 
 const TOOLS = checkTools();
 
-// Category styles
+// Styles
 const STYLES = {
-    person: { bg: '#2C3E50', icon: '👤', color: '#FF6B6B', name: 'PERSON' },
-    history: { bg: '#3D2817', icon: '📜', color: '#D4A574', name: 'HISTORY' },
-    money: { bg: '#0D3D0D', icon: '💰', color: '#FFE66D', name: 'MONEY' },
-    food: { bg: '#4A1C1C', icon: '🍽️', color: '#FF8C69', name: 'FOOD' },
-    animal: { bg: '#0D3320', icon: '🐾', color: '#98D8C8', name: 'ANIMAL' },
-    war: { bg: '#3D0D0D', icon: '⚔️', color: '#E74C3C', name: 'WAR' },
-    crime: { bg: '#1a1a1a', icon: '🔍', color: '#95A5A6', name: 'CRIME' },
-    science: { bg: '#0D1F3C', icon: '🔬', color: '#74B9FF', name: 'SCIENCE' },
-    love: { bg: '#3D1C2C', icon: '❤️', color: '#FF69B4', name: 'LOVE' },
-    death: { bg: '#1a1a1a', icon: '💀', color: '#7F8C8D', name: 'DEATH' },
-    lego: { bg: '#FFE66D', icon: '🧱', color: '#FF6B6B', name: ' LEGO ' },
-    default: { bg: '#1a1a2e', icon: '⭐', color: '#FFFFFF', name: 'STORY' }
+    person: { bg: '#2C3E50', icon: '👤 PERSON' },
+    history: { bg: '#3D2817', icon: '📜 HISTORY' },
+    money: { bg: '#0D3D0D', icon: '💰 MONEY' },
+    food: { bg: '#4A1C1C', icon: '🍽️ FOOD' },
+    animal: { bg: '#0D3320', icon: '🐾 ANIMAL' },
+    war: { bg: '#3D0D0D', icon: '⚔️ WAR' },
+    crime: { bg: '#1a1a1a', icon: '🔍 CRIME' },
+    science: { bg: '#0D1F3C', icon: '🔬 SCIENCE' },
+    love: { bg: '#3D1C2C', icon: '❤️ LOVE' },
+    death: { bg: '#1a1a1a', icon: '💀 DEATH' },
+    lego: { bg: '#FFE66D', icon: '🧱 LEGO' },
+    default: { bg: '#1a1a2e', icon: '⭐ STORY' }
 };
 
 // Detect category
 function detectCategory(text) {
     const lower = text.toLowerCase();
     const map = {
-        person: ['man', 'woman', 'people', 'king', 'queen', 'person', 'human'],
-        history: ['year', 'century', 'war', 'ancient', 'history', 'empire'],
-        money: ['money', 'gold', 'rich', 'dollar', 'million', 'cash'],
-        food: ['food', 'eat', 'cook', 'recipe', 'meal', 'delicious'],
-        animal: ['animal', 'dog', 'cat', 'bird', 'fish', 'species'],
-        war: ['war', 'soldier', 'army', 'battle', 'weapon', 'military'],
-        crime: ['crime', 'police', 'prison', 'murder', 'criminal'],
-        science: ['science', 'invent', 'discovery', 'experiment', 'theory'],
-        love: ['love', 'marriage', 'romance', 'heart', 'wedding'],
-        death: ['death', 'die', 'kill', 'dead', 'murder'],
-        lego: ['lego', 'toy', 'brick', 'play', 'child']
+        person: ['man', 'woman', 'people', 'king', 'person', 'human'],
+        history: ['year', 'century', 'war', 'ancient', 'history'],
+        money: ['money', 'gold', 'rich', 'dollar', 'million'],
+        food: ['food', 'eat', 'cook', 'recipe', 'meal'],
+        animal: ['animal', 'dog', 'cat', 'bird', 'fish'],
+        war: ['war', 'soldier', 'army', 'battle', 'weapon'],
+        crime: ['crime', 'police', 'prison', 'murder'],
+        science: ['science', 'invent', 'discovery', 'theory'],
+        love: ['love', 'marriage', 'romance', 'heart'],
+        death: ['death', 'die', 'kill', 'dead'],
+        lego: ['lego', 'toy', 'brick', 'play']
     };
 
     for (const [cat, words] of Object.entries(map)) {
@@ -101,46 +100,48 @@ function detectCategory(text) {
     return 'default';
 }
 
-// Simple PNG generator (no external deps)
-function createPNG(filepath, text, category, index) {
+// Create simple colored PNG (raw Node.js, no dependencies)
+function createSimplePNG(filepath, width, height, r, g, b) {
+    const { createCanvas } = require('canvas');
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(0, 0, width, height);
+
+    const buffer = canvas.toBuffer('image/png');
+    fs.writeFileSync(filepath, buffer);
+    return filepath;
+}
+
+// Create slide with text using FFmpeg drawtext
+function createSlide(filepath, text, category, index) {
     const style = STYLES[category] || STYLES.default;
-    const W = 1080, H = 1920;
 
     // Parse hex color
     const hexToRgb = (hex) => {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result ? [
-            parseInt(result[1], 16),
-            parseInt(result[2], 16),
-            parseInt(result[3], 16)
-        ] : [0, 0, 0];
+        hex = hex.replace('#', '');
+        return [parseInt(hex.substr(0, 2), 16), parseInt(hex.substr(2, 2), 16), parseInt(hex.substr(4, 2), 16)];
     };
 
     const [r, g, b] = hexToRgb(style.bg);
+    const safeText = text.replace(/'/g, '').replace(/"/g, '').substring(0, 100);
 
-    // Create minimal valid PNG (1x1) and use FFmpeg to resize
-    const tempPath = filepath.replace('.png', '_temp.png');
-    const minimalPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-    fs.writeFileSync(tempPath, minimalPng);
-
-    // Escape text for FFmpeg
-    const safeText = text.replace(/'/g, '').replace(/"/g, '').substring(0, 80);
-
-    // Use FFmpeg to create styled image
-    const filter = `color=c=${style.bg}:s=1080x1920,format=rgb24,fps=30[bg];` +
-        `[bg]drawbox=x=0:y=0:w=1080:h=130:color=black@0.8:t=fill[header];` +
-        `[header]drawtext=text='${style.icon} ${style.name} TIME':fontcolor=white:fontsize=36:x=50:y=50:shadowcolor=black:shadowx=2:shadowy=2[out]`;
+    // Use FFmpeg to create colored background with text
+    const filter = `color=c=0x${style.bg.replace('#','')}:s=1080x1920[bg];` +
+        `[bg]drawbox=y=0:h=130:w=1080:c=black@0.8:t=fill[header];` +
+        `[header]drawtext=text='${style.icon} TIME':fontcolor=white:fontsize=32:x=50:y=50:shadowcolor=black:shadowx=2:shadowy=2[out];` +
+        `[out]drawtext=text='Part ${index + 1}':fontcolor=white:fontsize=24:x=50:y=90[final]`;
 
     try {
-        execSync(`ffmpeg -y -i "${tempPath}" -vf "${filter}" -frames:v 1 "${filepath}"`, { stdio: 'pipe' });
-        fs.unlinkSync(tempPath);
-        console.log(`✓ Created slide ${index + 1}: ${style.name}`);
+        execSync(`ffmpeg -y -lavfi "${filter}" -frames:v 1 "${filepath}"`, { stdio: 'pipe' });
+        console.log(`✓ Slide ${index + 1}: ${style.icon}`);
         return filepath;
     } catch (err) {
-        // Fallback - just copy minimal PNG
-        fs.writeFileSync(filepath, minimalPng);
-        fs.unlinkSync(tempPath);
-        console.log(`✓ Created minimal slide ${index + 1}`);
+        // Fallback: create minimal valid PNG
+        const minimalPNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+        fs.writeFileSync(filepath, minimalPNG);
+        console.log(`✓ Minimal slide ${index + 1}`);
         return filepath;
     }
 }
@@ -150,8 +151,6 @@ function generateTTS(text, filename) {
     const outputDir = CONFIG.OUTPUT_DIR;
     const filepath = path.join(outputDir, filename);
     const wavPath = filepath.replace('.mp3', '.wav');
-
-    console.log(`🎵 TTS: ${text.substring(0, 50)}...`);
 
     if (TOOLS.espeak) {
         try {
@@ -166,7 +165,7 @@ function generateTTS(text, filename) {
                 return filepath;
             }
         } catch (err) {
-            console.log(`TTS error: ${err.message}`);
+            console.log(`TTS failed`);
         }
     }
     return null;
@@ -194,10 +193,10 @@ async function renderVideo(projectPath, uploadToGithub = true) {
 
     const slides = [];
 
-    // Generate intro
+    // Generate intro slide
     const introCat = detectCategory(project.title);
     const introSlide = path.join(outputDir, `slide_${Date.now()}_0.png`);
-    createPNG(introSlide, project.title, introCat, 0);
+    createSlide(introSlide, project.title, introCat, 0);
     if (fs.existsSync(introSlide)) slides.push(introSlide);
 
     // Generate segment slides
@@ -205,7 +204,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
         const seg = project.timeline.segments[i];
         const cat = detectCategory(seg.narration);
         const slidePath = path.join(outputDir, `slide_${Date.now()}_${i + 1}.png`);
-        createPNG(slidePath, seg.narration.substring(0, 200), cat, i + 1);
+        createSlide(slidePath, seg.narration.substring(0, 150), cat, i + 1);
         if (fs.existsSync(slidePath)) slides.push(slidePath);
     }
 
@@ -213,7 +212,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
         throw new Error('No slides generated');
     }
 
-    console.log(`\n📊 Generated ${slides.length} slides`);
+    console.log(`\n📊 ${slides.length} slides created`);
 
     // Generate TTS
     const audioFiles = [];
@@ -223,7 +222,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
         if (audio && fs.existsSync(audio)) audioFiles.push(audio);
     }
 
-    console.log(`\n🎥 Created ${audioFiles.length} audio files`);
+    console.log(`🎵 ${audioFiles.length} audio files created`);
 
     // Create video
     if (TOOLS.ffmpeg) {
@@ -242,7 +241,6 @@ async function renderVideo(projectPath, uploadToGithub = true) {
             // Add subtitles
             const srtPath = path.join(outputDir, `subtitles-${project.id}.srt`);
             if (fs.existsSync(srtPath)) {
-                console.log('📝 Adding subtitles...');
                 fs.copyFileSync(srtPath, path.join(outputDir, 'subs.srt'));
                 args.push('-i', path.join(outputDir, 'subs.srt'));
                 args.push('-map', '1:0', '-c:s', 'mov_text');
@@ -250,17 +248,17 @@ async function renderVideo(projectPath, uploadToGithub = true) {
 
             // Add audio
             if (audioFiles.length > 0 && fs.existsSync(audioFiles[0])) {
-                console.log('🎵 Adding audio...');
                 args.push('-i', audioFiles[0]);
                 args.push('-map', '0:v', '-map', '1:a');
             } else {
                 args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-pix_fmt', 'yuv420p');
             }
 
-            args.push('-vf', `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`);
+            args.push('-vf', `scale=${width}:${height}`);
             args.push('-t', String(duration));
             args.push(outputPath);
 
+            console.log('\n🎥 Running FFmpeg...');
             await runFFmpeg(args);
             console.log(`✅ Video created: ${outputPath}`);
 

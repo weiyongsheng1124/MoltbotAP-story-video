@@ -1,30 +1,39 @@
 # Story Video Generator - Dockerfile
-# Installs FFmpeg, Python with PIL, espeak-ng for TTS
+# Installs FFmpeg, espeak-ng, and canvas for PNG generation
 
 FROM node:18-alpine
 
 # Install all required tools
 RUN apk add --no-cache \
     ffmpeg \
-    python3 \
-    py3-pip \
-    py3-pillow \
     espeak-ng \
     git \
-    bash
+    bash \
+    python3 \
+    py3-pip \
+    # Canvas dependencies
+    cairo \
+    pango \
+    jpeg \
+    giflib \
+    libpng \
+    tiff \
+    zlib-dev \
+    g++ \
+    make
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install npm dependencies
+RUN npm ci
 
 # Copy application
 COPY . .
 
-# Create output and video directories
+# Create directories
 RUN mkdir -p output video && chmod 777 output video
 
 # Expose port
