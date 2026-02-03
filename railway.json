@@ -1,0 +1,18 @@
+{
+  "$schema": "https://railway.app/schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "nodeVersion": "18"
+  },
+  "deploy": {
+    "startCommand": "node server.js",
+    "restartPolicy": "ON_FAILURE",
+    "healthcheckPath": "/health"
+  },
+  "env": {
+    "OPENAI_API_KEY": {
+      "description": "OpenAI API Key for TTS and DALL-E",
+      "required": true
+    }
+  }
+}
