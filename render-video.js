@@ -1,5 +1,5 @@
 /**
- * Story Video Renderer - Simple PNG generation
+ * Story Video Renderer - FFmpeg only (no Python/Canvas)
  */
 
 const fs = require('fs');
@@ -63,18 +63,18 @@ const TOOLS = checkTools();
 
 // Styles
 const STYLES = {
-    person: { bg: '#2C3E50', icon: '👤 PERSON' },
-    history: { bg: '#3D2817', icon: '📜 HISTORY' },
-    money: { bg: '#0D3D0D', icon: '💰 MONEY' },
-    food: { bg: '#4A1C1C', icon: '🍽️ FOOD' },
-    animal: { bg: '#0D3320', icon: '🐾 ANIMAL' },
-    war: { bg: '#3D0D0D', icon: '⚔️ WAR' },
-    crime: { bg: '#1a1a1a', icon: '🔍 CRIME' },
-    science: { bg: '#0D1F3C', icon: '🔬 SCIENCE' },
-    love: { bg: '#3D1C2C', icon: '❤️ LOVE' },
-    death: { bg: '#1a1a1a', icon: '💀 DEATH' },
-    lego: { bg: '#FFE66D', icon: '🧱 LEGO' },
-    default: { bg: '#1a1a2e', icon: '⭐ STORY' }
+    person: { bg: '#2C3E50', icon: '👤', name: 'PERSON', color: '0xFF6B6B' },
+    history: { bg: '#3D2817', icon: '📜', name: 'HISTORY', color: '0xD4A574' },
+    money: { bg: '#0D3D0D', icon: '💰', name: 'MONEY', color: '0xFFE66D' },
+    food: { bg: '#4A1C1C', icon: '🍽️', name: 'FOOD', color: '0xFF8C69' },
+    animal: { bg: '#0D3320', icon: '🐾', name: 'ANIMAL', color: '0x98D8C8' },
+    war: { bg: '#3D0D0D', icon: '⚔️', name: 'WAR', color: '0xE74C3C' },
+    crime: { bg: '#1a1a1a', icon: '🔍', name: 'CRIME', color: '0x95A5A6' },
+    science: { bg: '#0D1F3C', icon: '🔬', name: 'SCIENCE', color: '0x74B9FF' },
+    love: { bg: '#3D1C2C', icon: '❤️', name: 'LOVE', color: '0xFF69B4' },
+    death: { bg: '#1a1a1a', icon: '💀', name: 'DEATH', color: '0x7F8C8D' },
+    lego: { bg: '#FFE66D', icon: '🧱', name: ' LEGO ', color: '0xFF6B6B' },
+    default: { bg: '#1a1a2e', icon: '⭐', name: 'STORY', color: '0xFFFFFF' }
 };
 
 // Detect category
@@ -100,49 +100,26 @@ function detectCategory(text) {
     return 'default';
 }
 
-// Create simple colored PNG (raw Node.js, no dependencies)
-function createSimplePNG(filepath, width, height, r, g, b) {
-    const { createCanvas } = require('canvas');
-    const canvas = createCanvas(width, height);
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = `rgb(${r},${g},${b})`;
-    ctx.fillRect(0, 0, width, height);
-
-    const buffer = canvas.toBuffer('image/png');
-    fs.writeFileSync(filepath, buffer);
-    return filepath;
-}
-
-// Create slide with text using FFmpeg drawtext
+// Create slide using FFmpeg
 function createSlide(filepath, text, category, index) {
     const style = STYLES[category] || STYLES.default;
+    const safeText = text.replace(/'/g, '').replace(/"/g, '').substring(0, 120);
 
-    // Parse hex color
-    const hexToRgb = (hex) => {
-        hex = hex.replace('#', '');
-        return [parseInt(hex.substr(0, 2), 16), parseInt(hex.substr(2, 2), 16), parseInt(hex.substr(4, 2), 16)];
-    };
-
-    const [r, g, b] = hexToRgb(style.bg);
-    const safeText = text.replace(/'/g, '').replace(/"/g, '').substring(0, 100);
-
-    // Use FFmpeg to create colored background with text
-    const filter = `color=c=0x${style.bg.replace('#','')}:s=1080x1920[bg];` +
-        `[bg]drawbox=y=0:h=130:w=1080:c=black@0.8:t=fill[header];` +
-        `[header]drawtext=text='${style.icon} TIME':fontcolor=white:fontsize=32:x=50:y=50:shadowcolor=black:shadowx=2:shadowy=2[out];` +
-        `[out]drawtext=text='Part ${index + 1}':fontcolor=white:fontsize=24:x=50:y=90[final]`;
+    // FFmpeg drawtext filter for styled slide
+    const filter = `color=c=${style.bg}:s=1080x1920:rate=30,format=rgba[b];` +
+        `[b]drawbox=x=0:y=0:w=1080:h=130:color=black@0.7:t=fill[header];` +
+        `[header]drawtext=text='${style.icon} ${style.name} TIME':fontcolor=white:fontsize=32:x=50:y=45:font=Arial:shadowcolor=black:shadowx=2:shadowy=2[bg1];` +
+        `[bg1]drawtext=text='Part ${index + 1}':fontcolor=${style.color}:fontsize=24:x=50:y=85:font=Arial[bg2];` +
+        `[bg2]drawbox=x=40:y=220:w=1000:h=900:color=black@0.5:t=fill:round=20[box];` +
+        `[box]drawtext=text='${safeText}':fontcolor=white:fontsize=32:x=70:y=260:font=Arial:wrap=1:line_spacing=8[out]`;
 
     try {
-        execSync(`ffmpeg -y -lavfi "${filter}" -frames:v 1 "${filepath}"`, { stdio: 'pipe' });
-        console.log(`✓ Slide ${index + 1}: ${style.icon}`);
+        execSync(`ffmpeg -y -lavfi "${filter}" -frames:v 1 -q:v 2 "${filepath}"`, { stdio: 'pipe', timeout: 30 });
+        console.log(`✓ Slide ${index + 1}: ${style.icon} ${style.name}`);
         return filepath;
     } catch (err) {
-        // Fallback: create minimal valid PNG
-        const minimalPNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-        fs.writeFileSync(filepath, minimalPNG);
-        console.log(`✓ Minimal slide ${index + 1}`);
-        return filepath;
+        console.log(`✗ Slide error: ${err.message.substring(0, 100)}`);
+        return null;
     }
 }
 
@@ -155,7 +132,7 @@ function generateTTS(text, filename) {
     if (TOOLS.espeak) {
         try {
             const safeText = text.replace(/"/g, '\\"').substring(0, 300);
-            execSync(`espeak-ng -p 60 -s 150 -w "${wavPath}" "${safeText}"`, { stdio: 'pipe' });
+            execSync(`espeak-ng -p 60 -s 150 -w "${wavPath}" "${safeText}"`, { stdio: 'pipe', timeout: 30 });
 
             if (fs.existsSync(wavPath)) {
                 if (TOOLS.ffmpeg) {
@@ -165,7 +142,7 @@ function generateTTS(text, filename) {
                 return filepath;
             }
         } catch (err) {
-            console.log(`TTS failed`);
+            console.log(`TTS: ${text.substring(0, 40)}...`);
         }
     }
     return null;
@@ -193,7 +170,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
 
     const slides = [];
 
-    // Generate intro slide
+    // Generate intro
     const introCat = detectCategory(project.title);
     const introSlide = path.join(outputDir, `slide_${Date.now()}_0.png`);
     createSlide(introSlide, project.title, introCat, 0);
@@ -204,7 +181,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
         const seg = project.timeline.segments[i];
         const cat = detectCategory(seg.narration);
         const slidePath = path.join(outputDir, `slide_${Date.now()}_${i + 1}.png`);
-        createSlide(slidePath, seg.narration.substring(0, 150), cat, i + 1);
+        createSlide(slidePath, seg.narration.substring(0, 200), cat, i + 1);
         if (fs.existsSync(slidePath)) slides.push(slidePath);
     }
 
@@ -276,7 +253,7 @@ async function renderVideo(projectPath, uploadToGithub = true) {
                 }
             }
         } catch (err) {
-            console.log(`FFmpeg error: ${err.message}`);
+            console.log(`FFmpeg error: ${err.message.substring(0, 200)}`);
         }
     }
 

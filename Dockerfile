@@ -1,26 +1,14 @@
 # Story Video Generator - Dockerfile
-# Installs FFmpeg, espeak-ng, and canvas for PNG generation
+# FFmpeg + espeak-ng only (no Python/Canvas)
 
 FROM node:18-alpine
 
-# Install all required tools
+# Install FFmpeg and espeak-ng
 RUN apk add --no-cache \
     ffmpeg \
     espeak-ng \
     git \
-    bash \
-    python3 \
-    py3-pip \
-    # Canvas dependencies
-    cairo \
-    pango \
-    jpeg \
-    giflib \
-    libpng \
-    tiff \
-    zlib-dev \
-    g++ \
-    make
+    bash
 
 WORKDIR /app
 
