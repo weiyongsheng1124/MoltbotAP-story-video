@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+output
+video
+*.md
+.env
+.env.example
+.DS_Store
+*.mp4

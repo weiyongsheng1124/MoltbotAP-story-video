@@ -140,15 +140,30 @@ git push origin main
 1. Go to https://railway.app
 2. Login with GitHub
 3. Click "New Project"
-4. Select your repo
-5. Optional: Add `GITHUB_TOKEN` variable for auto-upload
+4. Select "Deploy from GitHub repo"
+5. Select your repo
+6. Railway will automatically detect the **Dockerfile** and install:
+   - FFmpeg for video rendering
+   - ImageMagick for image generation
+   - Python3 for fallback image generation
+   - Git for version control
+
+7. Optional: Add `GITHUB_TOKEN` variable for auto-upload
 
 ### 3. Railway Configuration
 
-The `railway.json` file includes:
-- FFmpeg, ImageMagick, espeak-ng for video generation
-- Python3 for image generation fallback
-- Health check endpoint
+The `Dockerfile` includes all required tools:
+- FFmpeg (video rendering)
+- ImageMagick (image generation)
+- Python3 (fallback image generation)
+- Git (version control)
+
+### 4. Troubleshooting
+
+If tools are not found, check:
+1. Railway is using Dockerfile (not nixpacks)
+2. Dockerfile exists in project root
+3. Redeploy the service after changes
 
 ## Auto-Generate Cron Job
 
