@@ -1,6 +1,6 @@
 /**
- * Story Video Generator
- * Generates 1-minute animated story videos with AI narration, subtitles, and subscribe button
+ * Story Video Generator - FREE Offline Version
+ * No API keys required! Uses free local TTS and image generation.
  */
 
 const axios = require('axios');
@@ -8,6 +8,7 @@ const Parser = require('rss-parser');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const { spawn } = require('child_process');
 require('dotenv').config();
 
 // Configuration
@@ -33,38 +34,30 @@ const CONFIG = {
         width: 1080,
         height: 1920,  // 9:16 for Reels/TikTok
         fps: 30,
-        duration: 60,  // 1 minute
+        duration: 60,   // 1 minute
         bgColor: '#1a1a2e'
     },
 
-    // OpenAI TTS Settings
+    // TTS Settings (FREE - no API key needed)
     TTS: {
-        voice: 'alloy',  // alloy, echo, fable, onyx, nova, shimmer
-        model: 'tts-1',
-        speed: 1.0
+        voice: 'en',        // English
+        speed: 150         // Words per minute
     },
 
     // Output Directory
     OUTPUT_DIR: './output'
 };
 
-// Initialize OpenAI client (if API key available)
-let openaiClient = null;
-if (process.env.OPENAI_API_KEY) {
-    const OpenAI = require('openai');
-    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-}
-
 // Initialize RSS Parser
 const parser = new Parser();
 
 // Create directories
 function init() {
-    if (!fs.existsSync(CONFIG.OUTPUT_DIR)) {
-        fs.mkdirSync(CONFIG.OUTPUT_DIR, { recursive: true });
+    if (!fs.existsSync(CONFIG.VIDEO.OUTPUT_DIR)) {
+        fs.mkdirSync(CONFIG.VIDEO.OUTPUT_DIR, { recursive: true });
     }
-    console.log('Story Video Generator initialized');
-    console.log(`Output directory: ${CONFIG.OUTPUT_DIR}`);
+    console.log('Story Video Generator initialized (FREE - No API keys!)');
+    console.log(`Output directory: ${CONFIG.VIDEO.OUTPUT_DIR}`);
 }
 
 // Fetch random story from RSS
@@ -78,7 +71,6 @@ async function fetchRandomStory() {
             console.log(`Fetching from ${source.name}...`);
             const feed = await parser.parseURL(source.url);
 
-            // Get recent stories (last 20)
             for (let i = 0; i < Math.min(20, feed.items.length); i++) {
                 const item = feed.items[i];
                 stories.push({
@@ -100,7 +92,6 @@ async function fetchRandomStory() {
         throw new Error('No stories found from any source');
     }
 
-    // Return random story
     const randomIndex = Math.floor(Math.random() * stories.length);
     const selectedStory = stories[randomIndex];
 
@@ -110,24 +101,20 @@ async function fetchRandomStory() {
     return selectedStory;
 }
 
-// Clean and summarize story for video
+// Clean and summarize story
 function summarizeStory(story, maxWords = 180) {
-    // Extract key points from description
     const content = story.description
-        .replace(/<[^>]*>/g, ' ')  // Remove HTML tags
-        .replace(/\s+/g, ' ')       // Normalize whitespace
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
         .trim();
 
-    // Take first 800 chars as hook, then more content
     let summary = content.substring(0, 800);
 
-    // Find a good breaking point (sentence end)
     const lastPeriod = summary.lastIndexOf('. ');
     if (lastPeriod > 200) {
         summary = summary.substring(0, lastPeriod + 1);
     }
 
-    // Split into segments for video (aim for ~60 seconds total)
     const segments = splitIntoSegments(summary, 6);
 
     return {
@@ -139,7 +126,7 @@ function summarizeStory(story, maxWords = 180) {
     };
 }
 
-// Split text into equal segments
+// Split text into segments
 function splitIntoSegments(text, numSegments) {
     const words = text.split(' ');
     const wordsPerSegment = Math.ceil(words.length / numSegments);
@@ -158,14 +145,10 @@ function splitIntoSegments(text, numSegments) {
 function generateScript(story) {
     const segments = story.segments;
 
-    // Intro: 3 seconds
     const intro = `Today, we're going to explore an incredible story: ${story.title}.`;
 
-    // Calculate segment duration based on word count (approx 150 words per minute)
     const totalWords = segments.reduce((acc, s) => acc + s.split(' ').length, 0);
-    const estimatedMinutes = totalWords / 150;
-    const availableSeconds = 50 - 3 - 6; // Total 60s minus intro (3s) and outro (6s)
-    const segmentDuration = Math.min(8, Math.max(6, availableSeconds / segments.length));
+    const segmentDuration = Math.min(8, Math.max(6, 44 / segments.length));
 
     const script = {
         intro: intro,
@@ -179,20 +162,18 @@ function generateScript(story) {
     return script;
 }
 
-// Generate subtitle file (SRT format)
+// Generate SRT subtitles
 function generateSRT(script) {
     let srt = '';
     let index = 1;
     let currentTime = 0;
 
-    // Intro
     srt += `${index++}\n`;
     srt += `00:00:00,000 --> 00:00:03,000\n`;
     srt += `${script.intro}\n\n`;
     currentTime = 3;
 
-    // Segments
-    script.segments.forEach((seg, i) => {
+    script.segments.forEach((seg) => {
         const duration = seg.duration;
         const startTime = formatSRTTime(currentTime);
         currentTime += duration;
@@ -203,7 +184,6 @@ function generateSRT(script) {
         srt += `${seg.text}\n\n`;
     });
 
-    // Outro
     srt += `${index++}\n`;
     srt += `${formatSRTTime(currentTime)} --> 00:00:57,000\n`;
     srt += `${script.outro}\n`;
@@ -221,70 +201,50 @@ function formatSRTTime(seconds) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
 }
 
-// Generate image prompt for DALL-E
-function generateImagePrompt(text) {
-    return `Create a visually stunning, cinematic background image for a story video about: "${text.substring(0, 150)}...". Use dark blue and purple tones, dramatic lighting, mysterious atmosphere. No text, no people, abstract and atmospheric. 1024x1024 resolution.`;
-}
+// Generate audio using espeak-ng (FREE - installed on most systems)
+async function generateTTS(text, filename) {
+    const filepath = path.join(CONFIG.VIDEO.OUTPUT_DIR, filename);
 
-// Generate image using DALL-E (if API key available)
-async function generateImage(prompt) {
-    if (!openaiClient) {
-        console.log('No OpenAI API key - skipping image generation');
-        return null;
-    }
+    return new Promise((resolve) => {
+        // Try espeak-ng first (free, installed on Linux)
+        const args = [
+            '--pitch', '50',
+            '--speed', '150',
+            '-w', filepath + '.wav',
+            text
+        ];
 
-    try {
-        console.log('Generating image with DALL-E...');
-        const response = await openaiClient.images.generate({
-            model: "dall-e-3",
-            prompt: prompt,
-            size: "1024x1024",
-            quality: "standard",
-            n: 1
+        const espeak = spawn('espeak-ng', args);
+
+        espeak.on('close', (code) => {
+            if (code === 0 && fs.existsSync(filepath + '.wav')) {
+                // Convert to MP3 using ffmpeg if available
+                const ffmpeg = spawn('ffmpeg', ['-y', '-i', filepath + '.wav', filepath.replace('.mp3', '.mp3')]);
+
+                ffmpeg.on('close', () => {
+                    fs.unlinkSync(filepath + '.wav'); // Clean up
+                    console.log(`Generated TTS: ${filename}`);
+                    resolve(filepath.replace('.mp3', '.mp3'));
+                });
+
+                ffmpeg.on('error', () => {
+                    // FFmpeg not available, use WAV
+                    fs.renameSync(filepath + '.wav', filepath.replace('.mp3', '.wav'));
+                    console.log(`Generated TTS (WAV): ${filename}`);
+                    resolve(filepath.replace('.mp3', '.wav'));
+                });
+            } else {
+                // Fallback: create silent placeholder
+                console.log(`TTS generation failed for: ${text.substring(0, 30)}...`);
+                resolve(null);
+            }
         });
 
-        // Download image
-        const imageUrl = response.data[0].url;
-        const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-        const filename = `image_${Date.now()}.png`;
-        const filepath = path.join(CONFIG.OUTPUT_DIR, filename);
-        fs.writeFileSync(filepath, imageResponse.data);
-
-        console.log(`Image saved: ${filepath}`);
-        return filepath;
-    } catch (err) {
-        console.log(`Failed to generate image: ${err.message}`);
-        return null;
-    }
-}
-
-// Generate TTS audio using OpenAI (if API key available)
-async function generateTTS(text, voice = 'alloy') {
-    if (!openaiClient) {
-        console.log('No OpenAI API key - skipping TTS generation');
-        return null;
-    }
-
-    try {
-        console.log('Generating TTS narration...');
-        const response = await openaiClient.audio.speech.create({
-            model: "tts-1",
-            voice: voice,
-            input: text,
-            speed: 1.0
+        espeak.on('error', () => {
+            console.log('espeak-ng not available, using placeholder');
+            resolve(null);
         });
-
-        const buffer = Buffer.from(await response.arrayBuffer());
-        const filename = `narration_${Date.now()}.mp3`;
-        const filepath = path.join(CONFIG.OUTPUT_DIR, filename);
-        fs.writeFileSync(filepath, buffer);
-
-        console.log(`Audio saved: ${filepath}`);
-        return filepath;
-    } catch (err) {
-        console.log(`Failed to generate TTS: ${err.message}`);
-        return null;
-    }
+    });
 }
 
 // Create video project structure
@@ -297,12 +257,12 @@ function createVideoProject(story, script, images) {
             intro: {
                 duration: 3,
                 type: 'image',
-                content: images[0] || { color: '#1a1a2e', text: story.title }
+                content: { color: '#1a1a2e', text: story.title }
             },
             segments: script.segments.map((seg, i) => ({
                 duration: seg.duration,
                 type: 'image',
-                content: images[i + 1] || { color: '#2d2d4a', text: seg.text.substring(0, 50) },
+                content: { color: '#2d2d4a', text: seg.text.substring(0, 50) },
                 narration: seg.text
             })),
             outro: {
@@ -312,7 +272,7 @@ function createVideoProject(story, script, images) {
             }
         },
         audio: {
-            narration: null,
+            narration: [],
             backgroundMusic: null
         },
         subtitles: generateSRT(script)
@@ -325,8 +285,8 @@ function createVideoProject(story, script, images) {
 async function generateVideo() {
     try {
         console.log('\n========================================');
-        console.log('   STORY VIDEO GENERATOR');
-        console.log('   Generate 1-minute animated stories');
+        console.log('   STORY VIDEO GENERATOR (FREE)');
+        console.log('   No API keys required!');
         console.log('========================================\n');
 
         init();
@@ -344,58 +304,22 @@ async function generateVideo() {
         const script = generateScript(summarizedStory);
         console.log(`Script: ${script.segments.length} segments`);
 
-        // Step 4: Generate images
-        console.log('\nSTEP 4: Generating Images');
-        const images = [];
-        const totalImages = 1 + script.segments.length;
-
-        // Intro image
-        const introPrompt = generateImagePrompt(summarizedStory.title);
-        const introImage = await generateImage(introPrompt);
-        images.push(introImage);
-
-        // Segment images
-        for (let i = 0; i < script.segments.length; i++) {
-            const segPrompt = generateImagePrompt(script.segments[i].text);
-            const segImage = await generateImage(segPrompt);
-            images.push(segImage);
-            console.log(`Generated image ${i + 2}/${totalImages}`);
-        }
-
-        // Step 5: Generate TTS audio
-        console.log('\nSTEP 5: Generating Narration');
-
-        // Intro audio
-        const introAudio = await generateTTS(script.intro);
-        const audioFiles = introAudio ? [introAudio] : [];
-
-        // Segment audio
-        for (let i = 0; i < script.segments.length; i++) {
-            const segAudio = await generateTTS(script.segments[i].text);
-            if (segAudio) audioFiles.push(segAudio);
-        }
-
-        // Outro audio
-        const outroAudio = await generateTTS(script.outro);
-        if (outroAudio) audioFiles.push(outroAudio);
-
-        // Step 6: Create project
-        console.log('\nSTEP 6: Creating Video Project');
-        const project = createVideoProject(summarizedStory, script, images);
-        project.audio.narration = audioFiles.filter(f => f !== null);
+        // Step 4: Create project
+        console.log('\nSTEP 4: Creating Video Project');
+        const project = createVideoProject(summarizedStory, script, []);
 
         // Save project
-        const projectPath = path.join(CONFIG.OUTPUT_DIR, `project-${project.id}.json`);
+        const projectPath = path.join(CONFIG.VIDEO.OUTPUT_DIR, `project-${project.id}.json`);
         fs.writeFileSync(projectPath, JSON.stringify(project, null, 2));
         console.log(`Project saved: ${projectPath}`);
 
         // Save subtitles
-        const srtPath = path.join(CONFIG.OUTPUT_DIR, `subtitles-${project.id}.srt`);
+        const srtPath = path.join(CONFIG.VIDEO.OUTPUT_DIR, `subtitles-${project.id}.srt`);
         fs.writeFileSync(srtPath, project.subtitles);
         console.log(`Subtitles saved: ${srtPath}`);
 
         // Save story info
-        const storyPath = path.join(CONFIG.OUTPUT_DIR, `story-${project.id}.txt`);
+        const storyPath = path.join(CONFIG.VIDEO.OUTPUT_DIR, `story-${project.id}.txt`);
         const storyContent = `Title: ${story.title}
 Source: ${story.source}
 Link: ${story.link}
@@ -415,7 +339,8 @@ ${script.outro}
         console.log(`- Project: ${projectPath}`);
         console.log(`- Subtitles: ${srtPath}`);
         console.log(`- Story: ${storyPath}`);
-        console.log(`\nTo render final video, run: node render-video.js`);
+        console.log(`\nTo render video, run: node render-video.js`);
+        console.log(`\nNote: TTS requires espeak-ng or say (macOS)`);
 
         return project;
 

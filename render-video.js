@@ -1,90 +1,81 @@
 /**
- * Video Renderer
- * Uses FFmpeg to render the final video with:
- * - Background images
- * - AI Narration (TTS)
- * - Background music
- * - Subtitles (burned in)
- * - Subscribe button animation at end
+ * Video Renderer - FREE Version
+ * Uses FFmpeg + FREE tools (no API keys required!)
  */
 
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 
 const CONFIG = {
     VIDEO: {
         width: 1080,
-        height: 1920,  // 9:16 for Reels
+        height: 1920,
         fps: 30,
         bgColor: '#1a1a2e'
-    },
-    FONT: {
-        family: 'Arial',
-        size: 48,
-        color: '#ffffff'
     },
     OUTPUT_DIR: './output'
 };
 
-/**
- * Generate placeholder image with text (using FFmpeg drawtext filter)
- * For production, use DALL-E or Stable Diffusion
- */
-async function generateTextImage(text, bgColor = '#1a1a2e', duration = 5, index = 0) {
-    // Create a simple colored PNG using FFmpeg
-    // In production, use DALL-E or similar
-
-    const { width, height } = CONFIG.VIDEO;
+// Generate gradient background image (FREE - no API needed)
+function generateGradientImage(text, bgColor, duration, index) {
     const filename = `slide_${Date.now()}_${index}.png`;
     const filepath = path.join(CONFIG.OUTPUT_DIR, filename);
 
-    // Generate a simple colored background image
-    const colorArgs = [
-        '-y',
-        '-f', 'lavfi',
-        '-i', `color=c=${bgColor}:s=${width}x${height}:d=${duration}`,
-        '-frames:v', '1',
-        filepath
-    ];
-
+    // Create gradient background using ImageMagick if available
     try {
-        await runFFmpeg(colorArgs);
-        console.log(`Generated slide: ${filename}`);
+        const colors = [
+            '#1a1a2e', '#16213e', '#0f3460', '#533483',
+            '#e94560', '#ff6b6b', '#4ecdc4', '#45b7d1'
+        ];
+        const color1 = colors[index % colors.length];
+        const color2 = colors[(index + 1) % colors.length];
+
+        execSync(`convert -size 1080x1920 gradient:${color1}-${color2} -gravity center -pointsize 48 -fill white -annotate 0 "${text.substring(0, 100)}" ${filepath}`);
+        console.log(`Generated image: ${filename}`);
     } catch (err) {
-        // FFmpeg not available, create placeholder info file
-        const placeholderPath = filepath.replace('.png', '_info.txt');
-        fs.writeFileSync(placeholderPath, JSON.stringify({
-            text,
-            bgColor,
-            duration,
-            index
-        }, null, 2));
-        console.log(`Created placeholder info: ${filename} (FFmpeg not available)`);
+        // Fallback: create simple colored PNG with Python/PIL
+        try {
+            const pythonCode = `
+import PIL.Image
+import PIL.ImageDraw
+import PIL.ImageFont
+
+img = PIL.Image.new('RGB', (1080, 1920), '${bgColor}')
+draw = PIL.ImageDraw.Draw(img)
+
+# Add some decorative circles
+for i in range(5):
+    x = 540 + (i - 2) * 200
+    y = 960 + (i % 2) * 300
+    r = 100 + i * 50
+    draw.ellipse([x-r, y-r, x+r, y+r], outline='white', width=3)
+
+img.save('${filepath}')
+`;
+            fs.writeFileSync('/tmp/gen_image.py', pythonCode);
+            execSync('python3 /tmp/gen_image.py', { cwd: CONFIG.OUTPUT_DIR });
+            console.log(`Generated image: ${filename}`);
+        } catch (err2) {
+            // Final fallback: create placeholder info file
+            fs.writeFileSync(filepath.replace('.png', '_info.txt'), JSON.stringify({ text, bgColor, duration, index }));
+            console.log(`Created placeholder: ${filename}`);
+        }
     }
 
-    return {
-        filepath,
-        duration,
-        text
-    };
+    return { filepath, duration, text };
 }
 
-/**
- * Generate subscribe button animation info
- * For production, use FFmpeg with drawtext and overlay filters
- */
+// Generate subscribe animation info (FREE - no rendering needed)
 function generateSubscribeAnimation() {
     console.log('\nSubscribe Button Animation Sequence:');
     console.log('===================================');
     console.log('0-1s:  Button appears with scale-up bounce effect');
-    console.log('1-3s:  Button floats gently (subtle bounce)');
+    console.log('1-3s:  Button floats gently');
     console.log('3-4s:  "SUBSCRIBE!" text appears');
     console.log('4-5s:  Golden bell icon wiggle animation');
-    console.log('5s+:   Arrow pointing down to button');
     console.log('===================================\n');
 
-    // Create animation metadata file
     const animInfo = {
         duration: 5,
         fps: 30,
@@ -109,16 +100,7 @@ function generateSubscribeAnimation() {
                 emoji: '⬇️',
                 position: { x: 540, y: 1650 }
             }
-        },
-        keyframes: [
-            { time: 0, scale: 1.2, opacity: 0 },
-            { time: 0.5, scale: 1.0, opacity: 1 },
-            { time: 1.5, yOffset: -10 },
-            { time: 2.5, yOffset: 0 },
-            { time: 3.5, bellRotation: 0.2 },
-            { time: 4.0, bellRotation: -0.2 },
-            { time: 4.5, bellRotation: 0.1 }
-        ]
+        }
     };
 
     const animPath = path.join(CONFIG.OUTPUT_DIR, 'subscribe_animation.json');
@@ -128,46 +110,40 @@ function generateSubscribeAnimation() {
     return animInfo;
 }
 
-/**
- * Run FFmpeg command
- */
+// Check if FFmpeg is available
+function checkFFmpeg() {
+    try {
+        execSync('ffmpeg -version', { stdio: 'ignore' });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// Run FFmpeg command
 function runFFmpeg(args) {
     return new Promise((resolve, reject) => {
         const ffmpeg = spawn('ffmpeg', args);
 
-        let stdout = '';
         let stderr = '';
-
-        ffmpeg.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
 
         ffmpeg.stderr.on('data', (data) => {
             stderr += data.toString();
-            // Progress output
-            const line = data.toString();
-            if (line.includes('frame=') || line.includes('time=')) {
-                process.stdout.write(`\r${line.trim()}`);
-            }
         });
 
         ffmpeg.on('close', (code) => {
             if (code === 0) {
-                resolve(stdout);
+                resolve();
             } else {
-                reject(new Error(`FFmpeg exited with code ${code}\n${stderr}`));
+                reject(new Error(stderr));
             }
         });
 
-        ffmpeg.on('error', (err) => {
-            reject(err);
-        });
+        ffmpeg.on('error', reject);
     });
 }
 
-/**
- * Render complete video project
- */
+// Render complete video project
 async function renderVideo(projectPath) {
     console.log(`\nRendering Video Project: ${projectPath}`);
 
@@ -178,12 +154,12 @@ async function renderVideo(projectPath) {
     const { width, height, fps } = project.settings;
     const outputDir = CONFIG.OUTPUT_DIR;
 
-    // Generate slides for intro and segments
+    // Generate slides
     const slides = [];
 
     // Intro slide
     console.log('\nGenerating intro slide...');
-    const introSlide = await generateTextImage(
+    const introSlide = generateGradientImage(
         project.timeline.intro.content?.text || project.title,
         '#1a1a2e',
         project.timeline.intro.duration,
@@ -195,7 +171,7 @@ async function renderVideo(projectPath) {
     for (let i = 0; i < project.timeline.segments.length; i++) {
         const seg = project.timeline.segments[i];
         console.log(`\nGenerating segment ${i + 1} slide...`);
-        const slide = await generateTextImage(
+        const slide = generateGradientImage(
             seg.content?.text || seg.narration,
             '#2d2d4a',
             seg.duration,
@@ -208,128 +184,73 @@ async function renderVideo(projectPath) {
     console.log('\nGenerating subscribe button animation...');
     const subscribeAnim = generateSubscribeAnimation();
 
-    // Create video from slides
+    // Create video
     console.log('\nCreating video from slides...');
     const outputFile = `story_video_${Date.now()}.mp4`;
     const outputPath = path.join(outputDir, outputFile);
 
-    // Simple approach: extend first slide to full duration
-    // In production with FFmpeg, concat all slides properly
-    const simpleArgs = [
-        '-y',
-        '-loop', '1',
-        '-i', slides[0].filepath,
-        '-c:v', 'libx264',
-        '-t', String(project.settings.duration),
-        '-pix_fmt', 'yuv420p',
-        '-vf', `scale=${width}:${height}`,
-        outputPath
-    ];
-
-    try {
-        console.log('\nRunning FFmpeg to create video...');
-
-        // Check if FFmpeg is available
+    if (checkFFmpeg()) {
         try {
-            await runFFmpeg(['-version']);
-            await runFFmpeg(simpleArgs);
-            console.log(`\nVideo created: ${outputPath}`);
-        } catch (ffmpegErr) {
-            console.log(`\nFFmpeg not available: ${ffmpegErr.message}`);
-            console.log('Creating placeholder output...');
+            // Simple concat using FFmpeg
+            const args = [
+                '-y',
+                '-loop', '1',
+                '-i', slides[0].filepath,
+                '-c:v', 'libx264',
+                '-t', String(project.settings.duration),
+                '-pix_fmt', 'yuv420p',
+                '-vf', `scale=${width}:${height}`,
+                outputPath
+            ];
 
-            // Create placeholder info file
-            const infoPath = outputPath.replace('.mp4', '_info.txt');
-            const infoContent = `Story Video Project
-===================
+            console.log('\nRunning FFmpeg...');
+            await runFFmpeg(args);
+            console.log(`\nVideo created: ${outputPath}`);
+        } catch (err) {
+            console.log(`FFmpeg error: ${err.message}`);
+            createPlaceholder(outputPath, project, slides, subscribeAnim);
+        }
+    } else {
+        console.log('\nFFmpeg not available - creating placeholder...');
+        createPlaceholder(outputPath, project, slides, subscribeAnim);
+    }
+
+    return outputPath;
+}
+
+// Create placeholder info when FFmpeg unavailable
+function createPlaceholder(outputPath, project, slides, subscribeAnim) {
+    const infoPath = outputPath.replace('.mp4', '_info.txt');
+    const infoContent = `Story Video Project (FFmpeg Required for MP4)
+=============================================
 Title: ${project.title}
 Duration: ${project.settings.duration} seconds
-Resolution: ${width}x${height}
-FPS: ${fps}
+Resolution: ${project.settings.width}x${project.settings.height}
 
 Slides Generated:
-${slides.map((s, i) => `  ${i + 1}. ${s.filepath} (${s.duration}s)`).join('\n')}
+${slides.map((s, i) => `  ${i + 1}. ${s.filepath}`).join('\n')}
 
-Narration Files:
-${project.audio.narration.map((a, i) => `  ${i + 1}. ${a}`).join('\n')}
-
-Subscribe Animation:
+Subscribe Animation Info:
 ${JSON.stringify(subscribeAnim, null, 2)}
 
-To render full video, install FFmpeg and run:
-ffmpeg -loop 1 -t 5 -i slide1.png -loop 1 -t 8 -i slide2.png ... -filter_complex "[0:v][1:v]concat=n=N:v=1:a=0[outv]" -map "[outv]" -c:v libx264 output.mp4
+To render video, install FFmpeg:
+  Ubuntu/Debian: sudo apt install ffmpeg
+  macOS: brew install ffmpeg
+  Windows: https://ffmpeg.org/download.html
+
+Then run:
+  ffmpeg -loop 1 -t 5 -i slide1.png -loop 1 -t 8 -i slide2.png ... -filter_complex "[0:v][1:v]concat=n=N:v=1:a=0[outv]" -map "[outv]" -c:v libx264 output.mp4
 `.trim();
-            fs.writeFileSync(infoPath, infoContent);
-            console.log(`Info file created: ${infoPath}`);
-        }
 
-        return outputPath;
-
-    } catch (err) {
-        console.error(`Error rendering video: ${err.message}`);
-        throw err;
-    }
-}
-
-/**
- * Add subtitles to video
- */
-async function addSubtitles(videoPath, srtPath) {
-    const outputPath = videoPath.replace('.mp4', '_with_subs.mp4');
-
-    const args = [
-        '-y',
-        '-i', videoPath,
-        '-vf', `subtitles=${srtPath}`,
-        '-c:a', 'copy',
-        outputPath
-    ];
-
-    try {
-        await runFFmpeg(args);
-        console.log(`Subtitles added: ${outputPath}`);
-        return outputPath;
-    } catch (err) {
-        console.log(`Failed to add subtitles: ${err.message}`);
-        return videoPath;
-    }
-}
-
-/**
- * Add background music to video
- */
-async function addBackgroundMusic(videoPath, musicPath, musicVolume = 0.3) {
-    const outputPath = videoPath.replace('.mp4', '_with_music.mp4');
-
-    const args = [
-        '-y',
-        '-i', videoPath,
-        '-i', musicPath,
-        '-filter_complex', `[0:a][1:a]amix=inputs=2:duration=first:weights=1 ${musicVolume}[out]`,
-        '-map', '0:v',
-        '-map', '[out]',
-        '-c:v', 'copy',
-        outputPath
-    ];
-
-    try {
-        await runFFmpeg(args);
-        console.log(`Background music added: ${outputPath}`);
-        return outputPath;
-    } catch (err) {
-        console.log(`Failed to add music: ${err.message}`);
-        return videoPath;
-    }
+    fs.writeFileSync(infoPath, infoContent);
+    console.log(`Info file created: ${infoPath}`);
 }
 
 // Export functions
 module.exports = {
-    generateTextImage,
-    generateSubscribeFrame,
-    generateSubscribeFrames,
+    generateGradientImage,
+    generateSubscribeAnimation,
     renderVideo,
-    addSubtitles,
-    addBackgroundMusic,
     CONFIG
 };
 
@@ -337,7 +258,6 @@ module.exports = {
 if (require.main === module) {
     const projectPath = process.argv[2] || path.join(CONFIG.OUTPUT_DIR, 'project-*.json').replace('*', '*');
 
-    // Find latest project file
     const files = fs.readdirSync(CONFIG.OUTPUT_DIR).filter(f => f.startsWith('project-'));
     if (files.length === 0) {
         console.log('No project files found. Run generator.js first.');
