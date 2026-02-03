@@ -27,6 +27,43 @@ app.get('/debug', (req, res) => {
     });
 });
 
+// Debug: check available tools
+app.get('/debug/tools', (req, res) => {
+    const { execSync } = require('child_process');
+    const tools = {};
+
+    const checks = [
+        { name: 'ffmpeg', cmd: 'ffmpeg -version' },
+        { name: 'convert', cmd: 'convert -version' },
+        { name: 'python3', cmd: 'python3 --version' },
+        { name: 'espeak-ng', cmd: 'espeak-ng --version' },
+        { name: 'git', cmd: 'git --version' },
+        { name: 'github_token', env: 'GITHUB_TOKEN' },
+        { name: 'github_pat', env: 'GITHUB_PAT' }
+    ];
+
+    const results = {};
+    for (const check of checks) {
+        if (check.cmd) {
+            try {
+                results[check.name] = execSync(check.cmd, { stdio: 'pipe' }).toString().substring(0, 100);
+            } catch (e) {
+                results[check.name] = 'Not found';
+            }
+        } else if (check.env) {
+            results[check.env] = process.env[check.env] ? 'Set (' + process.env[check.env].substring(0, 4) + '...)' : 'Not set';
+        }
+    }
+
+    res.json({
+        nodeVersion: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        tools: results,
+        envKeys: Object.keys(process.env).filter(k => k.includes('GITHUB') || k.includes('TOKEN'))
+    });
+});
+
 // List files in output directory
 app.get('/api/files', (req, res) => {
     const outputDir = path.join(__dirname, 'output');
