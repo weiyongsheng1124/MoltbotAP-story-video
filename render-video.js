@@ -17,6 +17,38 @@ const CONFIG = {
     OUTPUT_DIR: path.join(__dirname, 'output')
 };
 
+// Check what tools are available
+function checkAvailableTools() {
+    const tools = {
+        ffmpeg: false,
+        imagemagick: false,
+        python3: false,
+        espeak: false
+    };
+
+    try {
+        execSync('ffmpeg -version', { stdio: 'ignore' });
+        tools.ffmpeg = true;
+    } catch {}
+
+    try {
+        execSync('convert -version', { stdio: 'ignore' });
+        tools.imagemagick = true;
+    } catch {}
+
+    try {
+        execSync('python3 --version', { stdio: 'ignore' });
+        tools.python3 = true;
+    } catch {}
+
+    try {
+        execSync('espeak-ng --version', { stdio: 'ignore' });
+        tools.espeak = true;
+    } catch {}
+
+    return tools;
+}
+
 // Generate gradient background image (FREE - no API needed)
 function generateGradientImage(text, bgColor, duration, index) {
     const outputDir = CONFIG.OUTPUT_DIR;
@@ -55,7 +87,7 @@ for i in range(5):
 img.save('${filepath}')
 `;
             fs.writeFileSync('/tmp/gen_image.py', pythonCode);
-            execSync('python3 /tmp/gen_image.py', { cwd: CONFIG.OUTPUT_DIR });
+            execSync('python3 /tmp/gen_image.py', { cwd: outputDir });
             console.log(`Generated image: ${filename}`);
         } catch (err2) {
             // Final fallback: create placeholder info file
@@ -112,16 +144,6 @@ function generateSubscribeAnimation() {
     return animInfo;
 }
 
-// Check if FFmpeg is available
-function checkFFmpeg() {
-    try {
-        execSync('ffmpeg -version', { stdio: 'ignore' });
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 // Run FFmpeg command
 function runFFmpeg(args) {
     return new Promise((resolve, reject) => {
@@ -148,6 +170,14 @@ function runFFmpeg(args) {
 // Render complete video project
 async function renderVideo(projectPath) {
     console.log(`\nRendering Video Project: ${projectPath}`);
+
+    // Check available tools
+    const tools = checkAvailableTools();
+    console.log('\nAvailable tools:');
+    console.log(`  FFmpeg: ${tools.ffmpeg ? '✓' : '✗'}`);
+    console.log(`  ImageMagick: ${tools.imagemagick ? '✓' : '✗'}`);
+    console.log(`  Python3: ${tools.python3 ? '✓' : '✗'}`);
+    console.log(`  espeak-ng: ${tools.espeak ? '✓' : '✗'}`);
 
     // Load project
     const projectData = fs.readFileSync(projectPath, 'utf8');
@@ -191,7 +221,7 @@ async function renderVideo(projectPath) {
     const outputFile = `story_video_${Date.now()}.mp4`;
     const outputPath = path.join(outputDir, outputFile);
 
-    if (checkFFmpeg()) {
+    if (tools.ffmpeg) {
         try {
             // Simple concat using FFmpeg
             const args = [
@@ -210,24 +240,35 @@ async function renderVideo(projectPath) {
             console.log(`\nVideo created: ${outputPath}`);
         } catch (err) {
             console.log(`FFmpeg error: ${err.message}`);
-            createPlaceholder(outputPath, project, slides, subscribeAnim);
+            createPlaceholder(outputPath, project, slides, subscribeAnim, tools);
         }
     } else {
         console.log('\nFFmpeg not available - creating placeholder...');
-        createPlaceholder(outputPath, project, slides, subscribeAnim);
+        createPlaceholder(outputPath, project, slides, subscribeAnim, tools);
     }
 
     return outputPath;
 }
 
-// Create placeholder info when FFmpeg unavailable
-function createPlaceholder(outputPath, project, slides, subscribeAnim) {
+// Create placeholder info when tools unavailable
+function createPlaceholder(outputPath, project, slides, subscribeAnim, tools = {}) {
     const infoPath = outputPath.replace('.mp4', '_info.txt');
-    const infoContent = `Story Video Project (FFmpeg Required for MP4)
+    const installCmd = {
+        linux: 'sudo apt-get install ffmpeg imagemagick espeak-ng',
+        macos: 'brew install ffmpeg imagemagick espeak-ng'
+    };
+
+    const infoContent = `Story Video Project
 =============================================
 Title: ${project.title}
 Duration: ${project.settings.duration} seconds
 Resolution: ${project.settings.width}x${project.settings.height}
+
+Available Tools:
+  FFmpeg: ${tools.ffmpeg ? '✓' : '✗'}
+  ImageMagick: ${tools.imagemagick ? '✓' : '✗'}
+  Python3: ${tools.python3 ? '✓' : '✗'}
+  espeak-ng: ${tools.espeak ? '✓' : '✗'}
 
 Slides Generated:
 ${slides.map((s, i) => `  ${i + 1}. ${s.filepath}`).join('\n')}
@@ -235,13 +276,11 @@ ${slides.map((s, i) => `  ${i + 1}. ${s.filepath}`).join('\n')}
 Subscribe Animation Info:
 ${JSON.stringify(subscribeAnim, null, 2)}
 
-To render video, install FFmpeg:
-  Ubuntu/Debian: sudo apt install ffmpeg
-  macOS: brew install ffmpeg
-  Windows: https://ffmpeg.org/download.html
+To render video, install missing tools:
+  Linux: ${installCmd.linux}
+  macOS: ${installCmd.macos}
 
-Then run:
-  ffmpeg -loop 1 -t 5 -i slide1.png -loop 1 -t 8 -i slide2.png ... -filter_complex "[0:v][1:v]concat=n=N:v=1:a=0[outv]" -map "[outv]" -c:v libx264 output.mp4
+Or use external rendering service.
 `.trim();
 
     fs.writeFileSync(infoPath, infoContent);
@@ -253,6 +292,7 @@ module.exports = {
     generateGradientImage,
     generateSubscribeAnimation,
     renderVideo,
+    checkAvailableTools,
     CONFIG
 };
 
