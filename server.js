@@ -18,6 +18,35 @@ app.use(cors());
 app.use(express.json());
 app.use('/output', express.static(path.join(__dirname, 'output')));
 
+// Debug: show paths
+app.get('/debug', (req, res) => {
+    res.json({
+        __dirname: __dirname,
+        outputDir: path.join(__dirname, 'output'),
+        files: require('fs').readdirSync(path.join(__dirname, 'output') || [])
+    });
+});
+
+// List files in output directory
+app.get('/api/files', (req, res) => {
+    const outputDir = path.join(__dirname, 'output');
+    const files = require('fs').readdirSync(outputDir || '.');
+    res.json({ directory: outputDir, files: files.slice(0, 20) });
+});
+
+// Download video file
+app.get('/api/download/:filename', (req, res) => {
+    const filename = req.params.filename;
+    const outputDir = path.join(__dirname, 'output');
+    const filepath = path.join(outputDir, filename);
+
+    if (require('fs').existsSync(filepath)) {
+        res.download(filepath);
+    } else {
+        res.status(404).json({ error: 'File not found', path: filepath });
+    }
+});
+
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -67,9 +96,13 @@ app.post('/api/render/:projectId', async (req, res) => {
 
         const outputPath = await renderer.renderVideo(projectPath);
 
+        // Get filename from path
+        const filename = path.basename(outputPath);
+
         res.json({
             success: true,
             video: outputPath,
+            downloadUrl: `/api/download/${filename}`,
             message: 'Video rendered successfully'
         });
     } catch (err) {
