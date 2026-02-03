@@ -52,7 +52,55 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Generate video project
+// Auto-generate: Generate + Render in one call
+// This is the main endpoint for automated video generation
+app.post('/api/auto-generate', async (req, res) => {
+    try {
+        console.log('\n========================================');
+        console.log('   AUTO-GENERATE: Generate + Render Video');
+        console.log('========================================');
+
+        // Step 1: Generate project
+        console.log('\n[1/2] Generating story project...');
+        const project = await generator.generateVideo();
+        const projectId = project.id;
+
+        console.log(`\nProject ID: ${projectId}`);
+
+        // Step 2: Render video
+        console.log('\n[2/2] Rendering video...');
+        const { outputPath, githubUrl } = await renderer.renderVideo(
+            path.join(__dirname, 'output', `project-${projectId}.json`),
+            true // upload to github
+        );
+
+        // Get filename
+        const filename = path.basename(outputPath);
+
+        res.json({
+            success: true,
+            project: {
+                id: projectId,
+                title: project.title,
+                duration: project.settings.duration
+            },
+            files: {
+                project: `/output/project-${projectId}.json`,
+                subtitles: `/output/subtitles-${projectId}.srt`,
+                story: `/output/story-${projectId}.txt`,
+                video: `/output/${filename}`
+            },
+            githubUrl: githubUrl || `https://github.com/${renderer.CONFIG.GITHUB_REPO}/blob/main/${renderer.CONFIG.VIDEO_DIR}/${filename}`,
+            message: 'Video generated and uploaded to GitHub!'
+        });
+
+    } catch (err) {
+        console.error('Auto-generate error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Generate video project (step 1 only)
 app.post('/api/generate', async (req, res) => {
     try {
         console.log('\n========================================');
@@ -76,10 +124,58 @@ app.post('/api/generate', async (req, res) => {
                 project: `/output/project-${project.id}.json`,
                 subtitles: `/output/subtitles-${project.id}.srt`,
                 story: `/output/story-${project.id}.txt`
-            }
+            },
+            renderCommand: `/api/render/${project.id}`
         });
     } catch (err) {
         console.error('Generation error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Generate AND render video in one call (auto-generate script)
+app.post('/api/auto-generate', async (req, res) => {
+    try {
+        console.log('\n========================================');
+        console.log('   AUTO-GENERATE: Generate + Render Video');
+        console.log('========================================');
+
+        // Step 1: Generate project
+        console.log('\n[1/2] Generating story project...');
+        const project = await generator.generateVideo();
+        const projectId = project.id;
+
+        console.log(`\nProject ID: ${projectId}`);
+
+        // Step 2: Render video
+        console.log('\n[2/2] Rendering video...');
+        const { outputPath, githubUrl } = await renderer.renderVideo(
+            path.join(__dirname, 'output', `project-${projectId}.json`),
+            true // upload to github
+        );
+
+        // Get filename
+        const filename = path.basename(outputPath);
+
+        res.json({
+            success: true,
+            project: {
+                id: projectId,
+                title: project.title,
+                duration: project.settings.duration
+            },
+            files: {
+                project: `/output/project-${projectId}.json`,
+                subtitles: `/output/subtitles-${projectId}.srt`,
+                story: `/output/story-${projectId}.txt`,
+                video: `/${path.basename(CONFIG.OUTPUT_DIR)}/${filename}`
+            },
+            githubUrl: githubUrl || `https://github.com/${renderer.CONFIG.GITHUB_REPO}/blob/main/${renderer.CONFIG.VIDEO_DIR}/${filename}`,
+            message: 'Video generated and uploaded to GitHub!'
+        });
+
+    } catch (err) {
+        console.error('Auto-generate error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
@@ -172,11 +268,19 @@ app.listen(PORT, () => {
 Server running on http://localhost:${PORT}
 
 API Endpoints:
-- POST /api/generate  - Generate new video project
-- POST /api/render/:id - Render video to MP4
-- GET  /api/status/:id - Check project status
-- GET  /api/projects  - List recent projects
-- GET  /health        - Health check
+- POST /api/auto-generate  ⭐ Generate + Render video (ONE COMMAND)
+- POST /api/generate       Generate story project only
+- POST /api/render/:id     Render video only
+- GET  /api/status/:id     Check project status
+- GET  /api/projects       List recent projects
+- GET  /api/files         List output files
+- GET  /health            Health check
+
+Quick Commands:
+  curl -X POST ${process.env.RAILWAY_URL || 'http://localhost:3000'}/api/auto-generate
+
+Cron Job (generate every 6 hours):
+  0 */6 * * * curl -X POST ${process.env.RAILWAY_URL || 'http://localhost:3000'}/api/auto-generate
 
 Environment:
 - OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? 'Set' : 'Not set'}
