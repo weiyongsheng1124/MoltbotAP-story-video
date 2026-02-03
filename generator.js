@@ -45,7 +45,7 @@ const CONFIG = {
     },
 
     // Output Directory
-    OUTPUT_DIR: './output'
+    OUTPUT_DIR: path.join(__dirname, 'output')
 };
 
 // Initialize RSS Parser
@@ -53,11 +53,13 @@ const parser = new Parser();
 
 // Create directories
 function init() {
-    if (!fs.existsSync(CONFIG.VIDEO.OUTPUT_DIR)) {
-        fs.mkdirSync(CONFIG.VIDEO.OUTPUT_DIR, { recursive: true });
+    const outputDir = path.join(__dirname, 'output');
+    if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
     }
+    CONFIG.OUTPUT_DIR = outputDir;
     console.log('Story Video Generator initialized (FREE - No API keys!)');
-    console.log(`Output directory: ${CONFIG.VIDEO.OUTPUT_DIR}`);
+    console.log(`Output directory: ${outputDir}`);
 }
 
 // Fetch random story from RSS
@@ -203,7 +205,8 @@ function formatSRTTime(seconds) {
 
 // Generate audio using espeak-ng (FREE - installed on most systems)
 async function generateTTS(text, filename) {
-    const filepath = path.join(CONFIG.VIDEO.OUTPUT_DIR, filename);
+    const outputDir = CONFIG.OUTPUT_DIR;
+    const filepath = path.join(outputDir, filename);
 
     return new Promise((resolve) => {
         // Try espeak-ng first (free, installed on Linux)
@@ -222,14 +225,18 @@ async function generateTTS(text, filename) {
                 const ffmpeg = spawn('ffmpeg', ['-y', '-i', filepath + '.wav', filepath.replace('.mp3', '.mp3')]);
 
                 ffmpeg.on('close', () => {
-                    fs.unlinkSync(filepath + '.wav'); // Clean up
+                    if (fs.existsSync(filepath + '.wav')) {
+                        fs.unlinkSync(filepath + '.wav'); // Clean up
+                    }
                     console.log(`Generated TTS: ${filename}`);
                     resolve(filepath.replace('.mp3', '.mp3'));
                 });
 
                 ffmpeg.on('error', () => {
                     // FFmpeg not available, use WAV
-                    fs.renameSync(filepath + '.wav', filepath.replace('.mp3', '.wav'));
+                    if (fs.existsSync(filepath + '.wav')) {
+                        fs.renameSync(filepath + '.wav', filepath.replace('.mp3', '.wav'));
+                    }
                     console.log(`Generated TTS (WAV): ${filename}`);
                     resolve(filepath.replace('.mp3', '.wav'));
                 });
@@ -309,17 +316,18 @@ async function generateVideo() {
         const project = createVideoProject(summarizedStory, script, []);
 
         // Save project
-        const projectPath = path.join(CONFIG.VIDEO.OUTPUT_DIR, `project-${project.id}.json`);
+        const outputDir = CONFIG.OUTPUT_DIR;
+        const projectPath = path.join(outputDir, `project-${project.id}.json`);
         fs.writeFileSync(projectPath, JSON.stringify(project, null, 2));
         console.log(`Project saved: ${projectPath}`);
 
         // Save subtitles
-        const srtPath = path.join(CONFIG.VIDEO.OUTPUT_DIR, `subtitles-${project.id}.srt`);
+        const srtPath = path.join(outputDir, `subtitles-${project.id}.srt`);
         fs.writeFileSync(srtPath, project.subtitles);
         console.log(`Subtitles saved: ${srtPath}`);
 
         // Save story info
-        const storyPath = path.join(CONFIG.VIDEO.OUTPUT_DIR, `story-${project.id}.txt`);
+        const storyPath = path.join(outputDir, `story-${project.id}.txt`);
         const storyContent = `Title: ${story.title}
 Source: ${story.source}
 Link: ${story.link}

@@ -14,13 +14,14 @@ const CONFIG = {
         fps: 30,
         bgColor: '#1a1a2e'
     },
-    OUTPUT_DIR: './output'
+    OUTPUT_DIR: path.join(__dirname, 'output')
 };
 
 // Generate gradient background image (FREE - no API needed)
 function generateGradientImage(text, bgColor, duration, index) {
+    const outputDir = CONFIG.OUTPUT_DIR;
     const filename = `slide_${Date.now()}_${index}.png`;
-    const filepath = path.join(CONFIG.OUTPUT_DIR, filename);
+    const filepath = path.join(outputDir, filename);
 
     // Create gradient background using ImageMagick if available
     try {
@@ -76,6 +77,7 @@ function generateSubscribeAnimation() {
     console.log('4-5s:  Golden bell icon wiggle animation');
     console.log('===================================\n');
 
+    const outputDir = CONFIG.OUTPUT_DIR;
     const animInfo = {
         duration: 5,
         fps: 30,
@@ -103,7 +105,7 @@ function generateSubscribeAnimation() {
         }
     };
 
-    const animPath = path.join(CONFIG.OUTPUT_DIR, 'subscribe_animation.json');
+    const animPath = path.join(outputDir, 'subscribe_animation.json');
     fs.writeFileSync(animPath, JSON.stringify(animInfo, null, 2));
     console.log(`Animation info saved: ${animPath}`);
 
